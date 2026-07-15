@@ -1,80 +1,106 @@
 # wagateway
 
-Service internal terpisah untuk kirim notifikasi WhatsApp (struk, stok menipis, dsb) buat Zona Kasir, pakai [Baileys](https://github.com/WhiskeySockets/Baileys) (protokol WhatsApp Web tidak resmi). Sengaja dipisah dari `pos-backend` supaya kalau sesi WA putus/reconnect, API POS utama tidak ikut kena dampak.
+Service internal terpisah untuk kirim notifikasi WhatsApp (struk, stok menipis, dsb), pakai [Baileys](https://github.com/WhiskeySockets/Baileys) (protokol WhatsApp Web tidak resmi). Dipakai bareng-bareng oleh beberapa project (Zona Kasir, project lain) - tiap project punya akun login sendiri dan cuma bisa lihat riwayat pengirimannya sendiri.
 
 ## Cara kerja singkat
 
-1. Service ini "menautkan" 1 nomor WhatsApp sebagai perangkat tertaut (persis seperti buka WhatsApp Web), pakai **pairing code** (bukan scan QR) karena jalan di VPS tanpa layar.
-2. Setelah tertaut, sesi login tersimpan di folder `./auth` di server - selama folder ini tidak dihapus dan device tidak di-unlink dari HP, tidak perlu pairing ulang setiap restart.
-3. `pos-backend` (atau proses lain) tinggal `POST /send` ke service ini buat kirim pesan.
-4. Ada jeda (`SEND_DELAY_MS`) antar pesan yang dikirim - sengaja dibuat tidak instan biar tidak terlihat pola "blasting" ke sistem deteksi WhatsApp.
+1. Service ini menautkan **1 nomor WhatsApp** sebagai perangkat tertaut, pakai pairing code (bukan scan QR, karena jalan di VPS tanpa layar). Sesi login tersimpan di folder `./auth`.
+2. Tiap **project pemanggil** (Zona Kasir, project lain) punya akun sendiri di tabel `aplikasi` (dibuat admin lewat `/docs/admin`). Mereka login pakai Basic Auth username/password sendiri untuk kirim pesan dan lihat riwayat - riwayat punya project A tidak kelihatan dari akun project B.
+3. Ada jeda (`SEND_DELAY_MS`) antar pesan supaya tidak terlihat pola "blasting".
+4. Status tiap pesan (terkirim/delivered/read/gagal) di-update otomatis dari event asli WhatsApp lewat Baileys, bukan cuma "berhasil dipanggil doang".
 
-## Setup lokal (opsional, buat belajar alurnya dulu)
+## Dua Swagger UI, dua auth berbeda
 
-```bash
-npm install
-cp .env.example .env
-# isi API_KEY dan PAIR_NUMBER pakai NOMOR TEST/BUANGAN dulu, bukan nomor produksi
-npm start
-```
+| | `/docs/admin` | `/docs/app` |
+|---|---|---|
+| Login buka halamannya | Basic Auth admin (`DOCS_USER`/`DOCS_PASS` di `.env`) | Basic Auth admin juga (sekadar buat lihat dokumentasinya) |
+| Auth buat eksekusi endpoint | sama, admin | **Beda lagi** - login akun aplikasi (dibuat lewat `/docs/admin`), tombol Authorize di `/docs/app` |
+| Isinya | `/status`, `/pairing-code`, kelola akun aplikasi (`/admin/aplikasi`), `/admin/koneksi-log` | `/send`, `/history` |
+| Dipakai siapa | Kamu (operator wagateway) | Tiap project pemanggil, buat testing kirim pesan sendiri |
 
-Kode pairing akan muncul di terminal - masukkan di HP: **WhatsApp > Perangkat Tertaut > Tautkan dengan nomor telepon**.
-
-> Catatan: jangan bolak-balik pairing nomor yang sama antara laptop lokal dan VPS (beda IP/jaringan berkali-kali dalam waktu singkat bisa mencurigakan buat sistem deteksi WhatsApp). Pakai nomor test di lokal, lalu pairing ulang dari nol langsung di VPS pakai nomor produksi yang memang mau dipakai selamanya.
-
-## Deploy ke VPS
+## Setup pertama kali di VPS
 
 ```bash
 git clone https://github.com/mrafiisaansori/wa.git wagateway
 cd wagateway
 npm install --production
-cp .env.example .env
-nano .env   # isi API_KEY (wajib) dan PAIR_NUMBER (nomor WA produksi yang sudah lama dipakai)
 
+# 1. Buat database & tabel
+mysql -u root -p < wagateway.sql
+
+# 2. Konfigurasi
+cp .env.example .env
+nano .env
+# isi: DOCS_USER, DOCS_PASS, DB_USER, DB_PASS, DB_NAME (samain sama step 1),
+# dan PAIR_NUMBER (nomor WA lama yang mau ditautkan)
+
+# 3. Jalankan
 npm install -g pm2   # kalau belum ada
 pm2 start ecosystem.config.js
-pm2 logs wagateway   # lihat kode pairing yang muncul di sini
+pm2 logs wagateway
 ```
 
-Setelah tertaut dan `pm2 logs` menunjukan `[wagateway] terhubung ke WhatsApp.`, boleh kosongkan `PAIR_NUMBER` di `.env` lagi (tidak dipakai lagi setelah pairing pertama) lalu `pm2 restart wagateway`.
+## Pairing (tautkan nomor WA)
 
-Terakhir:
+1. Buka HP ke layar **WhatsApp > Perangkat Tertaut > Tautkan dengan nomor telepon**, siap-siap ketik.
+2. Baru buka `http://ip-vps:3900/docs/admin`, login admin, jalankan `GET /pairing-code`.
+3. Kode langsung muncul di response - ketik ke HP secepatnya (berlaku ~60 detik, tapi kalau koneksi VPS ke server WhatsApp tidak stabil bisa lebih cepat basi dari itu - cek `pm2 logs` kalau sering gagal).
+4. Kalau meleset, panggil ulang endpoint yang sama buat kode baru - tidak perlu restart proses.
 
-```bash
-pm2 save          # supaya proses ini auto-jalan lagi kalau VPS reboot
-pm2 startup       # sekali saja per VPS, ikuti instruksi yang muncul
+## Daftarkan project pemanggil
+
+Lewat `/docs/admin` > `POST /admin/aplikasi`:
+
+```json
+{ "username": "zonakasir", "password": "password-kuat-punya-zonakasir", "nama": "Zona Kasir" }
 ```
 
-## Testing lewat Swagger UI
+Kasih username/password ini ke project yang bersangkutan - mereka pakai ini buat login ke `/send` dan `/history` (lewat `/docs/app`, atau langsung dari kode mereka).
 
-Buka `http://ip-vps-kamu:3900/docs` di browser. Bakal muncul prompt login Basic Auth (username/password dari `DOCS_USER`/`DOCS_PASS` di `.env`) - beda dari `API_KEY` yang dipakai project pemanggil (`/send`). Setelah login, klik tombol **Authorize** di halaman Swagger, isi `X-API-Key` sesuai `API_KEY` di `.env`, baru bisa coba `POST /send` langsung dari browser.
-
-`/docs` otomatis nonaktif kalau `DOCS_PASS` belum diisi (fail closed, bukan malah kebuka bebas tanpa password).
-
-## Dipakai lebih dari satu project
-
-Service ini sengaja tidak dibikin spesifik untuk Zona Kasir - project lain tinggal panggil endpoint yang sama pakai `API_KEY` yang sama, dan boleh isi field `source` di body `/send` (opsional) buat nandain asal request di log, misal `"source": "zonakasir"` atau `"source": "project-lain"`. Kalau nanti butuh key terpisah per project (biar bisa dicabut satu-satu tanpa ganggu yang lain), tinggal ganti `API_KEY` tunggal jadi daftar key per project - belum dibikin sekarang karena belum perlu.
-
-## Pakai dari pos-backend
+## Pakai dari project lain (mis. pos-backend)
 
 ```js
+const auth = Buffer.from('zonakasir:password-kuat-punya-zonakasir').toString('base64');
+
 await axios.post('http://127.0.0.1:3900/send', {
   nomor: '6281234567890',
-  pesan: 'Halo, ini contoh notifikasi dari Zona Kasir.',
+  pesan: 'Halo, ini contoh notifikasi.',
 }, {
-  headers: { 'X-API-Key': process.env.WAGATEWAY_API_KEY },
+  headers: { Authorization: `Basic ${auth}` },
 });
 ```
 
+## Redeploy - apakah perlu pairing ulang?
+
+**Tidak**, selama folder `./auth` di VPS tidak dihapus dan device tidak di-unlink dari HP. Folder ini **tidak** ikut ke-`git pull` (sudah di `.gitignore`), jadi redeploy kode (fitur DB, auth, dsb di atas) sama sekali tidak menyentuh sesi WA yang sudah tertaut.
+
+```bash
+cd ~/pos/wa
+git pull
+npm install --production
+mysql -u root -p wagateway < wagateway.sql   # aman dijalankan ulang - CREATE TABLE IF NOT EXISTS
+nano .env   # tambahkan DB_HOST, DB_USER, DB_PASS, DB_NAME kalau belum ada
+pm2 restart wagateway
+pm2 logs wagateway
+```
+
+Yang **akan** memaksa pairing ulang (bukan karena redeploy, tapi hal lain): folder `./auth` terhapus manual, device di-unlink dari HP (WhatsApp > Perangkat Tertaut > pilih device ini > Log Out), atau WhatsApp mem-force-logout sesi (`statusCode 401` di log - kode saat ini otomatis bersih-bersih dan siap pairing ulang lewat `/pairing-code` kalau ini terjadi, tanpa perlu restart manual).
+
 ## Endpoint
 
-| Method | Path | Body | Keterangan |
+| Method | Path | Auth | Body/Query |
 |---|---|---|---|
-| GET | `/status` | - | `{ connected, antrian }` - cek koneksi WA masih hidup atau tidak |
-| POST | `/send` | `{ nomor, pesan }` | Header `X-API-Key` wajib kalau `API_KEY` sudah diset di `.env` |
+| GET | `/status` | - | - |
+| GET | `/pairing-code` | Admin | `?nomor=` opsional |
+| POST | `/admin/aplikasi` | Admin | `{ username, password, nama }` |
+| GET | `/admin/aplikasi` | Admin | - |
+| GET | `/admin/koneksi-log` | Admin | `?limit=` opsional |
+| POST | `/send` | Aplikasi | `{ nomor, pesan }` |
+| GET | `/history` | Aplikasi | `?limit=` opsional |
 
 ## Batasan yang disengaja (ponytail)
 
 - Antrian pengiriman masih in-memory (hilang kalau proses restart selagi ada antrian) - cukup untuk 1 nomor/1 proses. Kalau nanti butuh multi-nomor atau throughput tinggi, ganti ke queue eksternal (BullMQ + Redis).
-- Tidak ada retry otomatis kalau `sendMessage` gagal - caller (pos-backend) yang perlu putuskan mau retry atau tidak.
+- Tidak ada retry otomatis kalau `sendMessage` gagal - baris riwayat ditandai `gagal`, caller yang perlu putuskan mau retry atau tidak.
 - Tidak ada endpoint terima pesan masuk (cuma kirim) - sesuai kebutuhan awal (notifikasi searah).
+- 1 proses wagateway = 1 nomor WA. Kalau nanti butuh banyak nomor, perlu banyak instance + tabel `aplikasi`/`riwayat_pesan` ditambah kolom nomor pengirim.

@@ -12,9 +12,11 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
+    "mysql2": "^3.23.0",
     "pino": "^10.3.1",
     "swagger-ui-express": "^5.0.1"
   }

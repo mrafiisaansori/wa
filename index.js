@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
 const pino = require('pino');
+const bcrypt = require('bcryptjs');
 const swaggerUi = require('swagger-ui-express');
 const basicAuth = require('express-basic-auth');
 const { Boom } = require('@hapi/boom');
@@ -11,10 +12,11 @@ const {
   DisconnectReason,
   Browsers,
 } = require('@whiskeysockets/baileys');
-const swaggerSpec = require('./swagger');
+const db = require('./db');
+const swaggerAdmin = require('./swagger-admin');
+const swaggerApp = require('./swagger-app');
 
 const PORT = process.env.PORT || 3900;
-const API_KEY = process.env.API_KEY;
 const DOCS_USER = process.env.DOCS_USER;
 const DOCS_PASS = process.env.DOCS_PASS;
 const PAIR_NUMBER = process.env.PAIR_NUMBER; // nomor WA tujuan pairing, format 628xxxxxxxxxx (tanpa + / spasi)
@@ -29,6 +31,14 @@ let isReady = false;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 5000; // jeda sebelum reconnect - cegah reconnect storm kalau server WA sedang menolak koneksi
+
+async function logKoneksi(event, detail) {
+  try {
+    await db.query('INSERT INTO koneksi_log (event, detail) VALUES (?, ?)', [event, detail || null]);
+  } catch (err) {
+    console.error('[wagateway] gagal catat koneksi_log:', err.message);
+  }
+}
 
 // ponytail: antrian in-memory, cukup untuk 1 proses/1 nomor. Kalau nanti perlu
 // multi-nomor atau proses paralel, ganti ke queue eksternal (BullMQ + Redis).
@@ -58,6 +68,15 @@ async function processQueue() {
   }
 }
 
+// Baileys WAMessageStatus: ERROR=0, PENDING=1, SERVER_ACK=2, DELIVERY_ACK=3, READ=4, PLAYED=5.
+// PENDING/SERVER_ACK tidak diubah - status "terkirim" dari insert awal sudah cukup buat itu.
+function mapWAStatus(code) {
+  if (code === 0) return 'gagal';
+  if (code === 3) return 'delivered';
+  if (code === 4 || code === 5) return 'read';
+  return null;
+}
+
 async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
   authState = state;
@@ -71,6 +90,23 @@ async function startSock() {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Update status pengiriman (delivered/read/gagal) begitu WhatsApp ngasih tau -
+  // ini yang bikin riwayat_pesan bukan cuma "berhasil dipanggil", tapi status asli.
+  sock.ev.on('messages.update', async (updates) => {
+    for (const { key, update } of updates) {
+      const status = mapWAStatus(update?.status);
+      if (!key?.id || !status) continue;
+      try {
+        await db.query(
+          'UPDATE riwayat_pesan SET status = ?, status_update_at = NOW() WHERE wa_message_id = ?',
+          [status, key.id]
+        );
+      } catch (err) {
+        console.error('[wagateway] gagal update status pesan:', err.message);
+      }
+    }
+  });
+
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
 
@@ -78,6 +114,7 @@ async function startSock() {
       isReady = true;
       reconnectAttempts = 0;
       console.log('[wagateway] terhubung ke WhatsApp.');
+      logKoneksi('connected');
     }
 
     if (connection === 'close') {
@@ -91,12 +128,14 @@ async function startSock() {
         // Bersihkan sesi lama otomatis biar /pairing-code langsung bisa dipakai
         // lagi tanpa perlu restart manual.
         console.log('[wagateway] sesi logout - membersihkan sesi lama, siap pairing ulang.');
+        logKoneksi('logged_out', `statusCode ${statusCode}`);
         fs.rmSync('./auth', { recursive: true, force: true });
         reconnectAttempts = 0;
         startSock();
         return;
       }
 
+      logKoneksi('disconnected', `statusCode ${statusCode}`);
       reconnectAttempts += 1;
       if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
         console.error(
@@ -115,7 +154,7 @@ async function startSock() {
     // Sengaja TIDAK auto-request kode pairing di sini. Kode WhatsApp cuma valid
     // sekitar 60 detik - kalau di-generate otomatis pas proses baru start, sering
     // keburu basi sebelum sempat dibaca dari pm2 logs. Minta kode lewat
-    // GET /pairing-code (lewat Swagger /docs) tepat pas HP sudah siap ketik.
+    // GET /pairing-code (lewat Swagger /docs/admin) tepat pas HP sudah siap ketik.
     console.log('[wagateway] belum tertaut ke WhatsApp. Buka HP ke layar "Tautkan dengan nomor telepon", lalu panggil GET /pairing-code buat dapat kode barunya.');
   }
 }
@@ -125,64 +164,146 @@ startSock();
 const app = express();
 app.use(express.json());
 
-function requireApiKey(req, res, next) {
-  if (!API_KEY) {
-    console.warn('[wagateway] API_KEY belum diset - endpoint /send TIDAK terproteksi. Isi API_KEY sebelum production.');
-    return next();
+// ===== Auth admin (operator wagateway) - kredensial tunggal dari .env =====
+const requireDocsAuth = DOCS_PASS
+  ? basicAuth({ users: { [DOCS_USER || 'admin']: DOCS_PASS }, challenge: true })
+  : (req, res) => res.status(503).json({ error: 'Admin auth belum dikonfigurasi (DOCS_PASS kosong di .env)' });
+
+// ===== Auth aplikasi (project pemanggil) - dinamis dari tabel `aplikasi` =====
+// Ditulis manual (bukan express-basic-auth) karena butuh nempelin data aplikasi
+// yang login (req.aplikasi) buat scoping /history, bukan cuma true/false.
+async function requireAppAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (scheme !== 'Basic' || !encoded) {
+    res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
+    return res.status(401).json({ error: 'Login aplikasi diperlukan (Basic Auth username/password)' });
   }
-  if (req.headers['x-api-key'] !== API_KEY) {
-    return res.status(401).json({ error: 'API key tidak valid' });
+  const [username, password] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+  try {
+    const [rows] = await db.query(
+      'SELECT id, nama, password_hash, aktif FROM aplikasi WHERE username = ? LIMIT 1',
+      [username]
+    );
+    const row = rows[0];
+    const valid = row && row.aktif && (await bcrypt.compare(password || '', row.password_hash));
+    if (!valid) {
+      res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
+      return res.status(401).json({ error: 'Username/password aplikasi salah, atau aplikasi nonaktif' });
+    }
+    req.aplikasi = { id: row.id, nama: row.nama };
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal cek login aplikasi: ' + err.message });
   }
-  next();
 }
 
 app.get('/status', (req, res) => {
   res.json({ connected: isReady, antrian: queue.length });
 });
 
-app.post('/send', requireApiKey, async (req, res) => {
-  const { nomor, pesan, source } = req.body || {};
+// ===== Endpoint aplikasi (butuh login /aplikasi) =====
+
+app.post('/send', requireAppAuth, async (req, res) => {
+  const { nomor, pesan } = req.body || {};
   if (!nomor || !pesan) {
     return res.status(400).json({ error: 'nomor dan pesan wajib diisi' });
   }
   const jid = `${String(nomor).replace(/\D/g, '')}@s.whatsapp.net`;
-  console.log(`[wagateway] kirim -> ${jid}${source ? ` (source: ${source})` : ''}`);
+
+  const [insertResult] = await db.query(
+    'INSERT INTO riwayat_pesan (aplikasi_id, nomor_tujuan, pesan, status) VALUES (?, ?, ?, "antri")',
+    [req.aplikasi.id, nomor, pesan]
+  );
+  const riwayatId = insertResult.insertId;
+
   try {
-    await enqueueSend(jid, pesan);
-    res.json({ success: true });
+    const result = await enqueueSend(jid, pesan);
+    await db.query(
+      'UPDATE riwayat_pesan SET status = "terkirim", wa_message_id = ?, dikirim_at = NOW() WHERE id = ?',
+      [result?.key?.id || null, riwayatId]
+    );
+    res.json({ success: true, id: riwayatId });
+  } catch (err) {
+    await db.query(
+      'UPDATE riwayat_pesan SET status = "gagal", error_pesan = ? WHERE id = ?',
+      [String(err.message).slice(0, 250), riwayatId]
+    );
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/history', requireAppAuth, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const [rows] = await db.query(
+    `SELECT id, nomor_tujuan, pesan, status, error_pesan, dibuat_at
+     FROM riwayat_pesan WHERE aplikasi_id = ? ORDER BY id DESC LIMIT ${limit}`,
+    [req.aplikasi.id]
+  );
+  res.json(rows);
+});
+
+// ===== Endpoint admin (butuh login admin) =====
+
+app.get('/pairing-code', requireDocsAuth, async (req, res) => {
+  if (!sock) return res.status(503).json({ error: 'Socket belum siap, coba beberapa detik lagi' });
+  if (authState?.creds?.registered) {
+    return res.status(400).json({ error: 'Sudah tertaut ke WhatsApp - tidak perlu pairing lagi' });
+  }
+  const nomor = req.query.nomor || PAIR_NUMBER;
+  if (!nomor) {
+    return res.status(400).json({ error: 'Isi PAIR_NUMBER di .env, atau kirim ?nomor=628xxxxxxxxxx' });
+  }
+  try {
+    const code = await sock.requestPairingCode(nomor);
+    logKoneksi('pairing_requested', nomor);
+    res.json({ code, catatan: 'Berlaku sekitar 60 detik - langsung masukkan di HP: WhatsApp > Perangkat Tertaut > Tautkan dengan nomor telepon.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Swagger UI + endpoint pairing-code sama-sama konsol admin buat manusia
-// (bukan dipanggil dari kode project lain), jadi digembok Basic Auth yang sama,
-// bukan API key.
+app.post('/admin/aplikasi', requireDocsAuth, async (req, res) => {
+  const { username, password, nama } = req.body || {};
+  if (!username || !password || !nama) {
+    return res.status(400).json({ error: 'username, password, nama wajib diisi' });
+  }
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const [result] = await db.query(
+      'INSERT INTO aplikasi (username, password_hash, nama) VALUES (?, ?, ?)',
+      [username, hash, nama]
+    );
+    res.status(201).json({ id: result.insertId, username, nama });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'Username sudah dipakai' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/admin/aplikasi', requireDocsAuth, async (req, res) => {
+  const [rows] = await db.query('SELECT id, username, nama, aktif, dibuat_at FROM aplikasi ORDER BY id DESC');
+  res.json(rows);
+});
+
+app.get('/admin/koneksi-log', requireDocsAuth, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const [rows] = await db.query(`SELECT * FROM koneksi_log ORDER BY id DESC LIMIT ${limit}`);
+  res.json(rows);
+});
+
+// Dua Swagger UI terpisah: /docs/admin (pairing, status koneksi, kelola
+// aplikasi) dan /docs/app (kirim pesan & riwayat, login pakai akun aplikasi
+// masing-masing project). Dua-duanya digembok Basic Auth admin buat sekadar
+// MELIHAT dokumentasinya - endpoint di /docs/app tetap minta login aplikasi
+// terpisah lagi waktu benar-benar dipanggil (tombol Authorize di Swagger).
 if (DOCS_PASS) {
-  const requireDocsAuth = basicAuth({ users: { [DOCS_USER || 'admin']: DOCS_PASS }, challenge: true });
-
-  app.use('/docs', requireDocsAuth, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-  // Minta kode pairing baru kapan saja - panggil ini TEPAT sebelum ketik di HP
-  // (jangan minta lebih awal, kode WhatsApp cuma valid sekitar 60 detik).
-  app.get('/pairing-code', requireDocsAuth, async (req, res) => {
-    if (!sock) return res.status(503).json({ error: 'Socket belum siap, coba beberapa detik lagi' });
-    if (authState?.creds?.registered) {
-      return res.status(400).json({ error: 'Sudah tertaut ke WhatsApp - tidak perlu pairing lagi' });
-    }
-    const nomor = req.query.nomor || PAIR_NUMBER;
-    if (!nomor) {
-      return res.status(400).json({ error: 'Isi PAIR_NUMBER di .env, atau kirim ?nomor=628xxxxxxxxxx' });
-    }
-    try {
-      const code = await sock.requestPairingCode(nomor);
-      res.json({ code, catatan: 'Berlaku sekitar 60 detik - langsung masukkan di HP: WhatsApp > Perangkat Tertaut > Tautkan dengan nomor telepon.' });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.use('/docs/admin', requireDocsAuth, swaggerUi.serveFiles(swaggerAdmin), swaggerUi.setup(swaggerAdmin));
+  app.use('/docs/app', requireDocsAuth, swaggerUi.serveFiles(swaggerApp), swaggerUi.setup(swaggerApp));
 } else {
-  console.warn('[wagateway] DOCS_PASS belum diset di .env - Swagger UI (/docs) dan /pairing-code dinonaktifkan.');
+  console.warn('[wagateway] DOCS_PASS belum diset di .env - /docs/admin, /docs/app, /pairing-code, dan /admin/* dinonaktifkan.');
 }
 
 app.listen(PORT, () => console.log(`[wagateway] API jalan di port ${PORT}`));
