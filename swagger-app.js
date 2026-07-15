@@ -83,5 +83,28 @@ module.exports = {
         },
       },
     },
+    '/stats': {
+      get: {
+        summary: 'Ringkasan jumlah pesan per status (dipakai dashboard)',
+        tags: ['Riwayat'],
+        responses: {
+          200: {
+            description: 'Jumlah pesan per status milik aplikasi yang login',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    total: { type: 'integer' }, antri: { type: 'integer' }, terkirim: { type: 'integer' },
+                    delivered: { type: 'integer' }, read: { type: 'integer' }, gagal: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+          401: { description: 'Username/password aplikasi salah' },
+        },
+      },
+    },
   },
 };

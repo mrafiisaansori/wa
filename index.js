@@ -256,6 +256,16 @@ app.get('/history', requireAppAuth, async (req, res) => {
   res.json(rows);
 });
 
+app.get('/stats', requireAppAuth, async (req, res) => {
+  const [rows] = await db.query(
+    'SELECT status, COUNT(*) AS jumlah FROM riwayat_pesan WHERE aplikasi_id = ? GROUP BY status',
+    [req.aplikasi.id]
+  );
+  const stats = { total: 0, antri: 0, terkirim: 0, delivered: 0, read: 0, gagal: 0 };
+  rows.forEach((r) => { stats[r.status] = r.jumlah; stats.total += r.jumlah; });
+  res.json(stats);
+});
+
 // ===== Endpoint admin (butuh login admin) =====
 
 app.get('/pairing-code', requireDocsAuth, async (req, res) => {
