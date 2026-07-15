@@ -75,6 +75,30 @@ module.exports = {
         },
       },
     },
+    '/pairing-code': {
+      get: {
+        summary: 'Minta kode pairing baru (sekali tautkan nomor WA)',
+        description:
+          'Panggil ini TEPAT sebelum siap mengetik di HP - kode dari WhatsApp cuma valid ' +
+          'sekitar 60 detik. Halaman ini sendiri sudah digembok login Basic Auth punya /docs, ' +
+          'jadi tidak butuh X-API-Key terpisah.',
+        tags: ['Pairing'],
+        parameters: [
+          {
+            name: 'nomor',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', example: '628123456789' },
+            description: 'Opsional kalau PAIR_NUMBER sudah diisi di .env',
+          },
+        ],
+        responses: {
+          200: { description: 'Kode pairing (berlaku singkat)' },
+          400: { description: 'Sudah tertaut, atau nomor belum diisi' },
+          503: { description: 'Socket belum siap' },
+        },
+      },
+    },
     '/send': {
       post: {
         summary: 'Kirim pesan WhatsApp',
