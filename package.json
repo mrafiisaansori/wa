@@ -1,0 +1,21 @@
+{
+  "name": "wagateway",
+  "version": "1.0.0",
+  "description": "WhatsApp gateway internal Zona Kasir - kirim notifikasi WA lewat Baileys",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "pm2": "pm2 start ecosystem.config.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "6.7.23",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-basic-auth": "^1.2.1",
+    "pino": "^10.3.1",
+    "swagger-ui-express": "^5.0.1"
+  }
+}
