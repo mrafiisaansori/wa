@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const express = require('express');
 const pino = require('pino');
 const swaggerUi = require('swagger-ui-express');
@@ -25,6 +26,9 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 let sock;
 let authState; // ref ke state.creds - dipakai /pairing-code buat cek sudah registered atau belum
 let isReady = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY_MS = 5000; // jeda sebelum reconnect - cegah reconnect storm kalau server WA sedang menolak koneksi
 
 // ponytail: antrian in-memory, cukup untuk 1 proses/1 nomor. Kalau nanti perlu
 // multi-nomor atau proses paralel, ganti ke queue eksternal (BullMQ + Redis).
@@ -72,6 +76,7 @@ async function startSock() {
 
     if (connection === 'open') {
       isReady = true;
+      reconnectAttempts = 0;
       console.log('[wagateway] terhubung ke WhatsApp.');
     }
 
@@ -80,11 +85,29 @@ async function startSock() {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       console.log('[wagateway] koneksi terputus.', { statusCode, loggedOut });
-      if (!loggedOut) {
-        startSock(); // reconnect otomatis (drop koneksi sementara, dsb)
-      } else {
-        console.log('[wagateway] sesi logout dari HP - hapus folder ./auth lalu pairing ulang.');
+
+      if (loggedOut) {
+        // Sesi ditolak WhatsApp (mis. di-unlink dari HP, atau kena force-logout).
+        // Bersihkan sesi lama otomatis biar /pairing-code langsung bisa dipakai
+        // lagi tanpa perlu restart manual.
+        console.log('[wagateway] sesi logout - membersihkan sesi lama, siap pairing ulang.');
+        fs.rmSync('./auth', { recursive: true, force: true });
+        reconnectAttempts = 0;
+        startSock();
+        return;
       }
+
+      reconnectAttempts += 1;
+      if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+        console.error(
+          `[wagateway] gagal reconnect ${MAX_RECONNECT_ATTEMPTS}x berturut-turut (statusCode terakhir: ${statusCode}). ` +
+          'Berhenti auto-reconnect - kemungkinan VPS tidak bisa konek ke server WhatsApp (cek jaringan/firewall keluar), ' +
+          'restart manual setelah dicek: pm2 restart wagateway'
+        );
+        return;
+      }
+      console.log(`[wagateway] reconnect percobaan ke-${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dalam ${RECONNECT_DELAY_MS / 1000} detik...`);
+      setTimeout(startSock, RECONNECT_DELAY_MS);
     }
   });
 
