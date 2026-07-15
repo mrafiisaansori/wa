@@ -20,6 +20,10 @@ Service internal terpisah untuk kirim notifikasi WhatsApp (struk, stok menipis, 
 
 Jadi total 3 kredensial yang beda-beda fungsinya: **admin** (kelola wagateway), **app-docs** (siapa yang boleh buka halaman dokumentasi `/docs/app`), dan **login aplikasi per-project** (siapa yang boleh benar-benar kirim pesan & lihat riwayat). Kalau `APP_DOCS_PASS` kosong di `.env`, `/docs/app` otomatis nonaktif (fail closed) - `/docs/admin` tidak terpengaruh, keduanya independen.
 
+## Web UI di `/`
+
+Selain 2 Swagger di atas, ada halaman web biasa (`public/index.html` - HTML/CSS/JS polos, tanpa build step, di-serve langsung dari Express) di root domain, buat orang non-teknis di tiap project pemanggil: login pakai username/password akun aplikasi mereka (sama persis dengan yang dipakai di `/docs/app`, cuma UI-nya lebih ramah), lalu bisa kirim pesan dan lihat riwayat sendiri tanpa perlu paham Swagger. Halaman ini publik (siapa saja bisa buka halaman login-nya), tapi tidak bisa apa-apa tanpa login akun aplikasi yang valid - sama levelnya kayak login page aplikasi manapun.
+
 ## Setup pertama kali di VPS
 
 ```bash

@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WA Gateway</title>
+<meta name="description" content="Panel kirim notifikasi WhatsApp dan riwayat pengiriman." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #05070d;
+    --bg-2: #0a0f1a;
+    --card: rgba(255,255,255,0.045);
+    --card-solid: #0d1420;
+    --border: rgba(255,255,255,0.09);
+    --text: #eef4fb;
+    --text-dim: #8a96ab;
+    --cyan: #3ddbc8;
+    --violet: #7c5cff;
+    --st-antri: #8a96ab;
+    --st-terkirim: #7c5cff;
+    --st-delivered: #3ddbc8;
+    --st-read: #4ade80;
+    --st-gagal: #ff5470;
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+    overflow-x: hidden;
+  }
+  h1, h2, h3, .brand { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
+
+  /* ambient background */
+  .bg-grid {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(61,219,200,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(61,219,200,0.05) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%);
+  }
+  .bg-glow {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  }
+  .bg-glow::before, .bg-glow::after {
+    content: ""; position: absolute; width: 620px; height: 620px; border-radius: 50%;
+    filter: blur(120px); opacity: 0.28;
+  }
+  .bg-glow::before { background: var(--cyan); top: -220px; left: -160px; }
+  .bg-glow::after { background: var(--violet); bottom: -260px; right: -180px; }
+
+  .view { position: relative; z-index: 1; }
+  .hidden { display: none !important; }
+
+  a { color: var(--cyan); }
+
+  /* ===== Login view ===== */
+  #view-login {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .login-shell {
+    width: 100%;
+    max-width: 960px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    align-items: center;
+    gap: 40px;
+  }
+  .hero-illustration { width: 100%; max-width: 380px; margin: 0 auto; display: block; }
+  .hero-copy { padding: 12px; }
+  .hero-copy .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--cyan); background: rgba(61,219,200,0.09); border: 1px solid rgba(61,219,200,0.25);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  .hero-copy .eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--cyan); }
+  .hero-copy h1 { font-size: 32px; line-height: 1.2; margin: 18px 0 12px; font-weight: 800; letter-spacing: -0.01em; }
+  .hero-copy p { color: var(--text-dim); line-height: 1.7; font-size: 15px; max-width: 46ch; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 30px 70px -40px rgba(0,0,0,0.6);
+  }
+  .login-card { padding: 32px; }
+  .login-card h2 { margin: 0 0 4px; font-size: 20px; }
+  .login-card .sub { color: var(--text-dim); font-size: 13px; margin: 0 0 24px; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 7px; }
+  .field input {
+    width: 100%; padding: 12px 14px; border-radius: 12px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text);
+    font-family: inherit; font-size: 14px; outline: none;
+    transition: border-color .2s, background .2s;
+  }
+  .field input:focus { border-color: var(--cyan); background: rgba(61,219,200,0.06); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 13px 18px; border-radius: 12px; border: none; cursor: pointer;
+    font-family: inherit; font-size: 14.5px; font-weight: 700;
+    background: linear-gradient(135deg, var(--cyan), var(--violet)); color: #04150f;
+    transition: transform .18s ease, box-shadow .18s ease;
+    box-shadow: 0 16px 34px -18px rgba(61,219,200,0.55);
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .btn.ghost {
+    background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--border);
+    box-shadow: none; font-weight: 600;
+  }
+
+  .alert {
+    padding: 11px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px;
+    border: 1px solid transparent; display: none;
+  }
+  .alert.show { display: block; }
+  .alert.error { background: rgba(255,84,112,0.1); border-color: rgba(255,84,112,0.35); color: #ff8fa3; }
+  .alert.success { background: rgba(61,219,200,0.1); border-color: rgba(61,219,200,0.35); color: var(--cyan); }
+
+  /* ===== Dashboard view ===== */
+  #view-dashboard { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 26px; flex-wrap: wrap; }
+  .topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; }
+  .topbar .brand .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+  .topbar .who { font-size: 13px; color: var(--text-dim); }
+  .topbar .who b { color: var(--text); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+    padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+  }
+  .status-pill .led { width: 8px; height: 8px; border-radius: 999px; background: var(--text-dim); }
+  .status-pill.online .led { background: var(--st-read); box-shadow: 0 0 10px var(--st-read); }
+  .status-pill.offline .led { background: var(--st-gagal); box-shadow: 0 0 10px var(--st-gagal); }
+
+  .grid-main { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 22px; align-items: start; }
+
+  .panel { padding: 24px; margin-bottom: 22px; }
+  .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 9px; }
+  .panel .panel-sub { color: var(--text-dim); font-size: 12.5px; margin: 0 0 20px; }
+  textarea {
+    width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 12px; resize: vertical;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text);
+    font-family: inherit; font-size: 14px; outline: none;
+  }
+  textarea:focus { border-color: var(--cyan); background: rgba(61,219,200,0.06); }
+  .hint { font-size: 11.5px; color: var(--text-dim); margin-top: 6px; }
+
+  .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .info-list li { display: flex; gap: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.6; }
+  .info-list .badge-dot { width: 9px; height: 9px; border-radius: 3px; margin-top: 4px; flex: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); font-weight: 600; padding: 0 10px 10px; border-bottom: 1px solid var(--border);
+  }
+  tbody td { padding: 12px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  .msg-cell { max-width: 260px; color: var(--text-dim); }
+  .num-cell { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .time-cell { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700;
+    padding: 4px 10px; border-radius: 999px; text-transform: capitalize;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .badge.antri { color: var(--st-antri); background: rgba(138,150,171,0.14); }
+  .badge.terkirim { color: var(--st-terkirim); background: rgba(124,92,255,0.14); }
+  .badge.delivered { color: var(--st-delivered); background: rgba(61,219,200,0.14); }
+  .badge.read { color: var(--st-read); background: rgba(74,222,128,0.14); }
+  .badge.gagal { color: var(--st-gagal); background: rgba(255,84,112,0.14); }
+
+  .empty-state { text-align: center; padding: 40px 12px; color: var(--text-dim); font-size: 13.5px; }
+  .refresh-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .icon-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text);
+    width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: grid; place-items: center;
+  }
+  .icon-btn:hover { border-color: var(--cyan); }
+  .spin { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 860px) {
+    .login-shell { grid-template-columns: 1fr; }
+    .hero-illustration { max-width: 240px; }
+    .grid-main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <!-- ===================== LOGIN VIEW ===================== -->
+  <main id="view-login" class="view">
+    <div class="login-shell">
+      <div class="hero-copy">
+        <span class="eyebrow">WA Gateway</span>
+        <h1>Kirim notifikasi WhatsApp lewat satu gateway, dipakai banyak project.</h1>
+        <p>Login pakai akun aplikasi yang sudah didaftarkan admin. Setelah masuk, kamu bisa kirim pesan WhatsApp dan lihat riwayat pengiriman - status terkirim, delivered, sampai dibaca, real-time dari WhatsApp.</p>
+
+        <svg class="hero-illustration" viewBox="0 0 400 400" aria-hidden="true">
+          <defs>
+            <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#3ddbc8" />
+              <stop offset="100%" stop-color="#7c5cff" />
+            </linearGradient>
+            <radialGradient id="centerGrad">
+              <stop offset="0%" stop-color="#16233a" />
+              <stop offset="100%" stop-color="#0a0f1a" />
+            </radialGradient>
+          </defs>
+          <g stroke="url(#lineGrad)" stroke-width="1.4" fill="none" opacity="0.45">
+            <line x1="200" y1="200" x2="200" y2="55" />
+            <line x1="200" y1="200" x2="325" y2="125" />
+            <line x1="200" y1="200" x2="325" y2="275" />
+            <line x1="200" y1="200" x2="200" y2="345" />
+            <line x1="200" y1="200" x2="75" y2="275" />
+            <line x1="200" y1="200" x2="75" y2="125" />
+          </g>
+          <g fill="#0a0f1a" stroke="#3ddbc8" stroke-width="1.5">
+            <circle cx="200" cy="55" r="11" />
+            <circle cx="325" cy="125" r="11" />
+            <circle cx="325" cy="275" r="11" />
+            <circle cx="200" cy="345" r="11" />
+            <circle cx="75" cy="275" r="11" />
+            <circle cx="75" cy="125" r="11" />
+          </g>
+          <circle r="3.2" fill="#3ddbc8"><animateMotion dur="2.3s" repeatCount="indefinite" path="M200,55 L200,200" /></circle>
+          <circle r="3.2" fill="#7c5cff"><animateMotion dur="2.8s" repeatCount="indefinite" path="M325,125 L200,200" /></circle>
+          <circle r="3.2" fill="#3ddbc8"><animateMotion dur="2.1s" repeatCount="indefinite" path="M325,275 L200,200" /></circle>
+          <circle r="3.2" fill="#7c5cff"><animateMotion dur="3s" repeatCount="indefinite" path="M200,345 L200,200" /></circle>
+          <circle r="3.2" fill="#3ddbc8"><animateMotion dur="2.5s" repeatCount="indefinite" path="M75,275 L200,200" /></circle>
+          <circle r="3.2" fill="#7c5cff"><animateMotion dur="2.7s" repeatCount="indefinite" path="M75,125 L200,200" /></circle>
+          <circle cx="200" cy="200" r="38" fill="url(#centerGrad)" stroke="#3ddbc8" stroke-width="2" />
+          <path d="M186 208 a20 20 0 0 1 28 0 M192 200 a12 12 0 0 1 16 0" stroke="#eafffb" stroke-width="2.4" fill="none" stroke-linecap="round" />
+          <circle cx="200" cy="214" r="2.4" fill="#eafffb" />
+        </svg>
+      </div>
+
+      <div class="card login-card">
+        <h2>Masuk</h2>
+        <p class="sub">Pakai username &amp; password aplikasi dari admin wagateway.</p>
+        <div id="login-alert" class="alert error"></div>
+        <form id="login-form">
+          <div class="field">
+            <label for="login-username">Username</label>
+            <input id="login-username" type="text" autocomplete="username" placeholder="mis. zonakasir" required />
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="btn" id="login-submit">Masuk</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== DASHBOARD VIEW ===================== -->
+  <main id="view-dashboard" class="view hidden">
+    <div class="topbar">
+      <div>
+        <div class="brand"><span class="dot"></span> WA Gateway</div>
+        <div class="who">Masuk sebagai <b id="who-name">-</b></div>
+      </div>
+      <div class="topbar-right">
+        <span class="status-pill" id="gateway-status"><span class="led"></span> Mengecek...</span>
+        <button class="btn ghost" id="logout-btn" style="width:auto;">Keluar</button>
+      </div>
+    </div>
+
+    <div class="grid-main">
+      <div>
+        <div class="card panel">
+          <h2>Kirim Pesan</h2>
+          <p class="panel-sub">Pesan masuk antrian dan dikirim dengan jeda otomatis (anti-blasting).</p>
+          <div id="send-alert" class="alert"></div>
+          <form id="send-form">
+            <div class="field">
+              <label for="send-nomor">Nomor tujuan</label>
+              <input id="send-nomor" type="text" placeholder="6281234567890" required />
+              <div class="hint">Format: kode negara tanpa + atau spasi, mis. 62812xxxxxxx</div>
+            </div>
+            <div class="field">
+              <label for="send-pesan">Pesan</label>
+              <textarea id="send-pesan" placeholder="Tulis pesan di sini..." required></textarea>
+            </div>
+            <button type="submit" class="btn" id="send-submit">Kirim Pesan</button>
+          </form>
+        </div>
+
+        <div class="card panel">
+          <h2>Keterangan Status</h2>
+          <p class="panel-sub">Arti tiap status di tabel riwayat.</p>
+          <ul class="info-list">
+            <li><span class="badge-dot" style="background:var(--st-antri)"></span><span><b style="color:var(--text)">Antri</b> - pesan diterima, menunggu giliran kirim (ada jeda antar pesan).</span></li>
+            <li><span class="badge-dot" style="background:var(--st-terkirim)"></span><span><b style="color:var(--text)">Terkirim</b> - sudah diteruskan ke server WhatsApp.</span></li>
+            <li><span class="badge-dot" style="background:var(--st-delivered)"></span><span><b style="color:var(--text)">Delivered</b> - sudah sampai di HP penerima.</span></li>
+            <li><span class="badge-dot" style="background:var(--st-read)"></span><span><b style="color:var(--text)">Read</b> - pesan sudah dibaca penerima.</span></li>
+            <li><span class="badge-dot" style="background:var(--st-gagal)"></span><span><b style="color:var(--text)">Gagal</b> - pengiriman gagal (nomor tidak valid, gateway belum terhubung, dll).</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card panel">
+        <div class="refresh-row">
+          <div>
+            <h2 style="margin-bottom:2px;">Riwayat Pengiriman</h2>
+            <p class="panel-sub" style="margin-bottom:0;">Cuma riwayat milik akun kamu yang tampil di sini.</p>
+          </div>
+          <button class="icon-btn" id="refresh-btn" title="Muat ulang">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          </button>
+        </div>
+        <div id="history-wrap">
+          <div class="empty-state">Memuat riwayat...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+(function () {
+  var STORE_KEY = 'wagateway_auth';
+  var STORE_NAME = 'wagateway_username';
+
+  var loginView = document.getElementById('view-login');
+  var dashView = document.getElementById('view-dashboard');
+  var loginForm = document.getElementById('login-form');
+  var loginAlert = document.getElementById('login-alert');
+  var loginSubmit = document.getElementById('login-submit');
+  var whoName = document.getElementById('who-name');
+  var logoutBtn = document.getElementById('logout-btn');
+  var sendForm = document.getElementById('send-form');
+  var sendAlert = document.getElementById('send-alert');
+  var sendSubmit = document.getElementById('send-submit');
+  var historyWrap = document.getElementById('history-wrap');
+  var refreshBtn = document.getElementById('refresh-btn');
+  var gatewayStatus = document.getElementById('gateway-status');
+
+  function authHeader() {
+    var token = sessionStorage.getItem(STORE_KEY);
+    return token ? { Authorization: 'Basic ' + token } : {};
+  }
+
+  function showAlert(el, message, type) {
+    el.textContent = message;
+    el.className = 'alert show ' + (type || 'error');
+  }
+  function hideAlert(el) { el.className = 'alert'; }
+
+  function showDashboard() {
+    loginView.classList.add('hidden');
+    dashView.classList.remove('hidden');
+    whoName.textContent = sessionStorage.getItem(STORE_NAME) || '-';
+    loadHistory();
+    checkStatus();
+  }
+  function showLogin() {
+    dashView.classList.add('hidden');
+    loginView.classList.remove('hidden');
+  }
+
+  async function checkStatus() {
+    try {
+      var res = await fetch('/status');
+      var data = await res.json();
+      if (data.connected) {
+        gatewayStatus.className = 'status-pill online';
+        gatewayStatus.innerHTML = '<span class="led"></span> Gateway terhubung';
+      } else {
+        gatewayStatus.className = 'status-pill offline';
+        gatewayStatus.innerHTML = '<span class="led"></span> Gateway belum terhubung';
+      }
+    } catch (e) {
+      gatewayStatus.className = 'status-pill offline';
+      gatewayStatus.innerHTML = '<span class="led"></span> Gagal cek status';
+    }
+  }
+
+  function fmtDate(iso) {
+    try {
+      var d = new Date(iso);
+      return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return iso; }
+  }
+
+  function renderHistory(rows) {
+    if (!rows || rows.length === 0) {
+      historyWrap.innerHTML = '<div class="empty-state">Belum ada riwayat pengiriman.</div>';
+      return;
+    }
+    var html = '<table><thead><tr><th>Nomor</th><th>Pesan</th><th>Status</th><th>Waktu</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr>' +
+        '<td class="num-cell">' + escapeHtml(r.nomor_tujuan) + '</td>' +
+        '<td class="msg-cell">' + escapeHtml(r.pesan) + '</td>' +
+        '<td><span class="badge ' + r.status + '">' + r.status + '</span></td>' +
+        '<td class="time-cell">' + fmtDate(r.dibuat_at) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    historyWrap.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  async function loadHistory() {
+    try {
+      var res = await fetch('/history?limit=50', { headers: authHeader() });
+      if (res.status === 401) return handleUnauthorized();
+      var rows = await res.json();
+      renderHistory(rows);
+    } catch (e) {
+      historyWrap.innerHTML = '<div class="empty-state">Gagal memuat riwayat.</div>';
+    }
+  }
+
+  function handleUnauthorized() {
+    sessionStorage.removeItem(STORE_KEY);
+    sessionStorage.removeItem(STORE_NAME);
+    showLogin();
+    showAlert(loginAlert, 'Sesi berakhir, silakan login lagi.', 'error');
+  }
+
+  loginForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    hideAlert(loginAlert);
+    var username = document.getElementById('login-username').value.trim();
+    var password = document.getElementById('login-password').value;
+    var token = btoa(username + ':' + password);
+
+    loginSubmit.disabled = true;
+    loginSubmit.textContent = 'Memeriksa...';
+    try {
+      var res = await fetch('/history?limit=1', { headers: { Authorization: 'Basic ' + token } });
+      if (res.status === 401) {
+        showAlert(loginAlert, 'Username atau password salah.', 'error');
+      } else if (!res.ok) {
+        showAlert(loginAlert, 'Gagal login, coba lagi.', 'error');
+      } else {
+        sessionStorage.setItem(STORE_KEY, token);
+        sessionStorage.setItem(STORE_NAME, username);
+        showDashboard();
+      }
+    } catch (err) {
+      showAlert(loginAlert, 'Tidak bisa menghubungi server.', 'error');
+    } finally {
+      loginSubmit.disabled = false;
+      loginSubmit.textContent = 'Masuk';
+    }
+  });
+
+  logoutBtn.addEventListener('click', function () {
+    sessionStorage.removeItem(STORE_KEY);
+    sessionStorage.removeItem(STORE_NAME);
+    showLogin();
+  });
+
+  refreshBtn.addEventListener('click', function () {
+    refreshBtn.querySelector('svg').classList.add('spin');
+    loadHistory().finally(function () {
+      setTimeout(function () { refreshBtn.querySelector('svg').classList.remove('spin'); }, 400);
+    });
+  });
+
+  sendForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    hideAlert(sendAlert);
+    var nomor = document.getElementById('send-nomor').value.trim();
+    var pesan = document.getElementById('send-pesan').value.trim();
+
+    sendSubmit.disabled = true;
+    sendSubmit.textContent = 'Mengirim...';
+    try {
+      var res = await fetch('/send', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+        body: JSON.stringify({ nomor: nomor, pesan: pesan }),
+      });
+      if (res.status === 401) return handleUnauthorized();
+      var data = await res.json();
+      if (res.ok) {
+        showAlert(sendAlert, 'Pesan masuk antrian pengiriman.', 'success');
+        document.getElementById('send-pesan').value = '';
+        loadHistory();
+      } else {
+        showAlert(sendAlert, data.error || 'Gagal mengirim pesan.', 'error');
+      }
+    } catch (err) {
+      showAlert(sendAlert, 'Tidak bisa menghubungi server.', 'error');
+    } finally {
+      sendSubmit.disabled = false;
+      sendSubmit.textContent = 'Kirim Pesan';
+    }
+  });
+
+  // Cek sesi tersimpan waktu buka halaman
+  (async function init() {
+    var token = sessionStorage.getItem(STORE_KEY);
+    if (!token) return;
+    try {
+      var res = await fetch('/history?limit=1', { headers: { Authorization: 'Basic ' + token } });
+      if (res.ok) return showDashboard();
+    } catch (e) {}
+    sessionStorage.removeItem(STORE_KEY);
+    sessionStorage.removeItem(STORE_NAME);
+  })();
+})();
+</script>
+</body>
+</html>

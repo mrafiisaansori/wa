@@ -1,5 +1,6 @@
 require('dotenv').config();
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const pino = require('pino');
 const bcrypt = require('bcryptjs');
@@ -165,6 +166,9 @@ startSock();
 
 const app = express();
 app.use(express.json());
+// UI web statis (login + kirim pesan + riwayat) - murni HTML/CSS/JS, tanpa
+// build step. Ditaruh sebelum route API biar / kepegang file public/index.html.
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ===== Auth admin (operator wagateway) - kredensial tunggal dari .env =====
 const requireDocsAuth = DOCS_PASS
