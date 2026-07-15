@@ -9,14 +9,16 @@ Service internal terpisah untuk kirim notifikasi WhatsApp (struk, stok menipis, 
 3. Ada jeda (`SEND_DELAY_MS`) antar pesan supaya tidak terlihat pola "blasting".
 4. Status tiap pesan (terkirim/delivered/read/gagal) di-update otomatis dari event asli WhatsApp lewat Baileys, bukan cuma "berhasil dipanggil doang".
 
-## Dua Swagger UI, dua auth berbeda
+## Dua Swagger UI, tiga lapis auth berbeda
 
 | | `/docs/admin` | `/docs/app` |
 |---|---|---|
-| Login buka halamannya | Basic Auth admin (`DOCS_USER`/`DOCS_PASS` di `.env`) | Basic Auth admin juga (sekadar buat lihat dokumentasinya) |
+| Login buka halamannya | Basic Auth admin (`DOCS_USER`/`DOCS_PASS`) | Basic Auth app-docs sendiri (`APP_DOCS_USER`/`APP_DOCS_PASS`) - **beda** dari admin |
 | Auth buat eksekusi endpoint | sama, admin | **Beda lagi** - login akun aplikasi (dibuat lewat `/docs/admin`), tombol Authorize di `/docs/app` |
 | Isinya | `/status`, `/pairing-code`, kelola akun aplikasi (`/admin/aplikasi`), `/admin/koneksi-log` | `/send`, `/history` |
-| Dipakai siapa | Kamu (operator wagateway) | Tiap project pemanggil, buat testing kirim pesan sendiri |
+| Dipakai siapa | Kamu (operator wagateway) | Tim/developer project pemanggil, buat testing kirim pesan sendiri |
+
+Jadi total 3 kredensial yang beda-beda fungsinya: **admin** (kelola wagateway), **app-docs** (siapa yang boleh buka halaman dokumentasi `/docs/app`), dan **login aplikasi per-project** (siapa yang boleh benar-benar kirim pesan & lihat riwayat). Kalau `APP_DOCS_PASS` kosong di `.env`, `/docs/app` otomatis nonaktif (fail closed) - `/docs/admin` tidak terpengaruh, keduanya independen.
 
 ## Setup pertama kali di VPS
 

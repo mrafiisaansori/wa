@@ -19,6 +19,8 @@ const swaggerApp = require('./swagger-app');
 const PORT = process.env.PORT || 3900;
 const DOCS_USER = process.env.DOCS_USER;
 const DOCS_PASS = process.env.DOCS_PASS;
+const APP_DOCS_USER = process.env.APP_DOCS_USER;
+const APP_DOCS_PASS = process.env.APP_DOCS_PASS;
 const PAIR_NUMBER = process.env.PAIR_NUMBER; // nomor WA tujuan pairing, format 628xxxxxxxxxx (tanpa + / spasi)
 // Jeda antar pesan - kunci utama biar tidak kelihatan pola "blasting" ke WhatsApp.
 const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS || 3000);
@@ -169,6 +171,13 @@ const requireDocsAuth = DOCS_PASS
   ? basicAuth({ users: { [DOCS_USER || 'admin']: DOCS_PASS }, challenge: true })
   : (req, res) => res.status(503).json({ error: 'Admin auth belum dikonfigurasi (DOCS_PASS kosong di .env)' });
 
+// ===== Auth khusus buka halaman /docs/app - beda dari admin, tapi ini cuma
+// gerbang buat LIHAT dokumentasinya. Eksekusi /send & /history di dalamnya
+// tetap minta login aplikasi (requireAppAuth) terpisah lagi. =====
+const requireAppDocsAuth = APP_DOCS_PASS
+  ? basicAuth({ users: { [APP_DOCS_USER || 'app']: APP_DOCS_PASS }, challenge: true })
+  : (req, res) => res.status(503).json({ error: 'App docs auth belum dikonfigurasi (APP_DOCS_PASS kosong di .env)' });
+
 // ===== Auth aplikasi (project pemanggil) - dinamis dari tabel `aplikasi` =====
 // Ditulis manual (bukan express-basic-auth) karena butuh nempelin data aplikasi
 // yang login (req.aplikasi) buat scoping /history, bukan cuma true/false.
@@ -294,16 +303,21 @@ app.get('/admin/koneksi-log', requireDocsAuth, async (req, res) => {
   res.json(rows);
 });
 
-// Dua Swagger UI terpisah: /docs/admin (pairing, status koneksi, kelola
-// aplikasi) dan /docs/app (kirim pesan & riwayat, login pakai akun aplikasi
-// masing-masing project). Dua-duanya digembok Basic Auth admin buat sekadar
-// MELIHAT dokumentasinya - endpoint di /docs/app tetap minta login aplikasi
-// terpisah lagi waktu benar-benar dipanggil (tombol Authorize di Swagger).
+// Dua Swagger UI terpisah, dua kredensial beda buat sekadar MELIHAT halamannya:
+// /docs/admin (pairing, status koneksi, kelola aplikasi) pakai login admin,
+// /docs/app (kirim pesan & riwayat) pakai login app-docs sendiri. Eksekusi
+// endpoint di /docs/app tetap minta login aplikasi lagi (requireAppAuth),
+// jadi ini murni gerbang "siapa yang boleh lihat dokumentasinya".
 if (DOCS_PASS) {
   app.use('/docs/admin', requireDocsAuth, swaggerUi.serveFiles(swaggerAdmin), swaggerUi.setup(swaggerAdmin));
-  app.use('/docs/app', requireDocsAuth, swaggerUi.serveFiles(swaggerApp), swaggerUi.setup(swaggerApp));
 } else {
-  console.warn('[wagateway] DOCS_PASS belum diset di .env - /docs/admin, /docs/app, /pairing-code, dan /admin/* dinonaktifkan.');
+  console.warn('[wagateway] DOCS_PASS belum diset di .env - /docs/admin, /pairing-code, dan /admin/* dinonaktifkan.');
+}
+
+if (APP_DOCS_PASS) {
+  app.use('/docs/app', requireAppDocsAuth, swaggerUi.serveFiles(swaggerApp), swaggerUi.setup(swaggerApp));
+} else {
+  console.warn('[wagateway] APP_DOCS_PASS belum diset di .env - /docs/app dinonaktifkan.');
 }
 
 app.listen(PORT, () => console.log(`[wagateway] API jalan di port ${PORT}`));
