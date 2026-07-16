@@ -53,8 +53,17 @@ module.exports = {
         properties: {
           connected: { type: 'boolean', example: true },
           nomor: { type: 'string', nullable: true, example: '6281234567890' },
+          nama_wa: { type: 'string', nullable: true, example: 'Toko Berkah', description: 'Nama profil WhatsApp (push name) dari HP yang tertaut' },
+          platform: { type: 'string', nullable: true, example: 'android', description: 'Platform client WA dari HP yang tertaut (android/ios/smba/dst), dari data pairing' },
+          nama_perangkat: { type: 'string', example: 'Chrome (Ubuntu)', description: 'Nama yang muncul di HP pada daftar "Perangkat Tertaut"' },
+          terhubung_sejak: { type: 'string', format: 'date-time', nullable: true },
           antrian: { type: 'integer', example: 0 },
-          log_terakhir: { type: 'object', nullable: true },
+          percobaan_reconnect: { type: 'integer', example: 0 },
+          riwayat_koneksi: {
+            type: 'array',
+            items: { type: 'object', properties: { event: { type: 'string' }, detail: { type: 'string', nullable: true }, dicatat_at: { type: 'string', format: 'date-time' } } },
+            description: '5 event koneksi terakhir (connected/disconnected/logged_out/pairing_requested/device_unlinked)',
+          },
         },
       },
       RiwayatItem: {

@@ -481,7 +481,20 @@
             <span class="status-pill" id="device-status"><span class="led"></span> Memeriksa...</span>
             <ul class="info-list" style="margin-top:16px;">
               <li><span><b style="color:var(--text)">Nomor</b>: <span id="device-nomor">-</span></span></li>
+              <li><span><b style="color:var(--text)">Nama profil WA</b>: <span id="device-nama-wa">-</span></span></li>
+              <li><span><b style="color:var(--text)">Platform HP</b>: <span id="device-platform">-</span></span></li>
+              <li><span><b style="color:var(--text)">Nama perangkat di HP</b>: <span id="device-nama-perangkat">-</span></span></li>
+              <li><span><b style="color:var(--text)">Terhubung sejak</b>: <span id="device-terhubung-sejak">-</span></span></li>
               <li><span><b style="color:var(--text)">Antrian kirim</b>: <span id="device-antrian">-</span></span></li>
+              <li><span><b style="color:var(--text)">Percobaan reconnect</b>: <span id="device-reconnect">-</span></span></li>
+            </ul>
+          </div>
+
+          <div class="card panel" id="panel-riwayat-koneksi">
+            <h2>Riwayat Koneksi</h2>
+            <p class="panel-sub">5 event koneksi WA terakhir milik akun kamu.</p>
+            <ul class="activity-list" id="device-log-list">
+              <li class="empty-state">Memuat...</li>
             </ul>
           </div>
 
@@ -598,7 +611,13 @@
   var activityList = document.getElementById('activity-list');
   var deviceStatus = document.getElementById('device-status');
   var deviceNomor = document.getElementById('device-nomor');
+  var deviceNamaWa = document.getElementById('device-nama-wa');
+  var devicePlatform = document.getElementById('device-platform');
+  var deviceNamaPerangkat = document.getElementById('device-nama-perangkat');
+  var deviceTerhubungSejak = document.getElementById('device-terhubung-sejak');
   var deviceAntrian = document.getElementById('device-antrian');
+  var deviceReconnect = document.getElementById('device-reconnect');
+  var deviceLogList = document.getElementById('device-log-list');
   var pairingForm = document.getElementById('pairing-form');
   var pairingAlert = document.getElementById('pairing-alert');
   var pairingSubmit = document.getElementById('pairing-submit');
@@ -754,9 +773,26 @@
       deviceStatus.className = 'status-pill ' + (data.connected ? 'online' : 'offline');
       deviceStatus.innerHTML = '<span class="led"></span> ' + pillText;
       deviceNomor.textContent = data.nomor || '-';
+      deviceNamaWa.textContent = data.nama_wa || '-';
+      devicePlatform.textContent = data.platform || '-';
+      deviceNamaPerangkat.textContent = data.nama_perangkat || '-';
+      deviceTerhubungSejak.textContent = data.terhubung_sejak ? fmtDate(data.terhubung_sejak) : '-';
       deviceAntrian.textContent = data.antrian;
+      deviceReconnect.textContent = data.percobaan_reconnect;
       var panelPairing = document.getElementById('panel-pairing');
       if (panelPairing) panelPairing.classList.toggle('hidden', !!data.nomor);
+
+      var log = data.riwayat_koneksi || [];
+      if (!log.length) {
+        deviceLogList.innerHTML = '<li class="empty-state">Belum ada riwayat koneksi.</li>';
+      } else {
+        deviceLogList.innerHTML = log.map(function (r) {
+          return '<li class="activity-row">' +
+            '<span class="activity-msg">' + escapeHtml(r.event) + (r.detail ? ' - ' + escapeHtml(r.detail) : '') + '</span>' +
+            '<span class="activity-time">' + fmtDate(r.dicatat_at) + '</span>' +
+          '</li>';
+        }).join('');
+      }
     } catch (e) {
       gatewayStatus.className = 'status-pill offline';
       gatewayStatus.innerHTML = '<span class="led"></span> Gagal cek status';

@@ -48,8 +48,13 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 const tenants = new Map(); // aplikasi_id -> tenant state
 
 function newTenantState() {
-  return { sock: null, authState: null, isReady: false, reconnectAttempts: 0, queue: [], processing: false };
+  return { sock: null, authState: null, isReady: false, reconnectAttempts: 0, queue: [], processing: false, terhubungSejak: null };
 }
+
+// Nama device yang dikirim ke WhatsApp saat pairing - ini yang muncul di HP
+// pemilik nomor, di daftar "Perangkat Tertaut". Dipakai juga di makeWASocket()
+// di bawah supaya info di /device konsisten sama yang tampil di HP.
+const NAMA_PERANGKAT = 'Chrome (Ubuntu)';
 
 function getTenant(aplikasiId) {
   let tenant = tenants.get(aplikasiId);
@@ -151,12 +156,14 @@ async function startSock(aplikasiId) {
     if (connection === 'open') {
       tenant.isReady = true;
       tenant.reconnectAttempts = 0;
+      tenant.terhubungSejak = new Date();
       console.log(`[wagateway] aplikasi #${aplikasiId} terhubung ke WhatsApp.`);
       logKoneksi(aplikasiId, 'connected');
     }
 
     if (connection === 'close') {
       tenant.isReady = false;
+      tenant.terhubungSejak = null;
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       console.log(`[wagateway] aplikasi #${aplikasiId} koneksi terputus.`, { statusCode, loggedOut });
@@ -203,12 +210,18 @@ async function startAllTenants() {
 startAllTenants().catch((err) => console.error('[wagateway] gagal load daftar aplikasi saat startup:', err.message));
 
 const app = express();
+// Di belakang reverse proxy (nginx dsb di VPS) - biar Express baca header
+// X-Forwarded-Proto dan tau koneksi aslinya HTTPS meski proxy connect ke
+// Node lewat HTTP biasa. Tanpa ini, cookie session "secure" di bawah bisa
+// gagal diset browser walau situsnya sudah https (kelihatannya kayak "gabisa
+// login" - login sukses tapi sesinya nggak nempel).
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' },
+  cookie: { httpOnly: true, sameSite: 'lax', secure: 'auto' },
 }));
 // UI web statis (login + kirim pesan + riwayat) - murni HTML/CSS/JS, tanpa
 // build step. Ditaruh sebelum route API biar / kepegang file public/index.html.
@@ -309,9 +322,17 @@ app.post('/login', async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'username dan password wajib diisi' });
   try {
     const aplikasi = await loadAplikasi(username, password);
-    if (!aplikasi) return res.status(401).json({ error: 'Username/password salah, atau aplikasi nonaktif' });
+    if (!aplikasi) {
+      // ponytail: log server-side biar gampang dicek `pm2 logs` kalau ada
+      // laporan "gabisa login" - tanpa nyimpan/nampilin password-nya.
+      console.warn(`[wagateway] login gagal untuk username="${username}"`);
+      return res.status(401).json({ error: 'Username/password salah, atau aplikasi nonaktif' });
+    }
     req.session.aplikasiId = aplikasi.id;
-    res.json({ success: true, nama: aplikasi.nama });
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ error: 'Gagal simpan sesi: ' + err.message });
+      res.json({ success: true, nama: aplikasi.nama });
+    });
   } catch (err) {
     res.status(500).json({ error: 'Gagal login: ' + err.message });
   }
@@ -334,7 +355,10 @@ app.post('/register', async (req, res) => {
   try {
     const id = await createAplikasi(username, password, nama);
     req.session.aplikasiId = id;
-    res.status(201).json({ success: true, id, nama });
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ error: 'Gagal simpan sesi: ' + err.message });
+      res.status(201).json({ success: true, id, nama });
+    });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Username sudah dipakai' });
@@ -449,14 +473,19 @@ app.post('/broadcast', requireAppAuth, async (req, res) => {
 app.get('/device', requireAppAuth, async (req, res) => {
   const tenant = getTenant(req.aplikasi.id);
   const [rows] = await db.query(
-    'SELECT event, dicatat_at FROM koneksi_log WHERE aplikasi_id = ? ORDER BY id DESC LIMIT 1',
+    'SELECT event, detail, dicatat_at FROM koneksi_log WHERE aplikasi_id = ? ORDER BY id DESC LIMIT 5',
     [req.aplikasi.id]
   );
   res.json({
     connected: tenant.isReady,
     nomor: tenant.sock?.user?.id ? tenant.sock.user.id.split(':')[0] : null,
+    nama_wa: tenant.sock?.user?.name || null,
+    platform: tenant.authState?.creds?.platform || null,
+    nama_perangkat: NAMA_PERANGKAT,
+    terhubung_sejak: tenant.terhubungSejak,
     antrian: tenant.queue.length,
-    log_terakhir: rows[0] || null,
+    percobaan_reconnect: tenant.reconnectAttempts,
+    riwayat_koneksi: rows,
   });
 });
 
