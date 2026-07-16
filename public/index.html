@@ -183,6 +183,12 @@
   .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .info-list li { display: flex; gap: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.6; }
   .info-list .badge-dot { width: 9px; height: 9px; border-radius: 3px; margin-top: 4px; flex: none; }
+  .info-list .step-num {
+    width: 22px; height: 22px; border-radius: 999px; flex: none;
+    background: rgba(61,219,200,0.14); color: var(--cyan);
+    display: grid; place-items: center; font-size: 11px; font-weight: 800;
+  }
+  .info-list code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
 
   /* ===== Pesan (history) ===== */
   .table-scroll { overflow-x: auto; }
@@ -481,7 +487,13 @@
 
           <div class="card panel" id="panel-pairing">
             <h2>Tautkan Nomor WhatsApp</h2>
-            <p class="panel-sub">Isi nomor, minta kode, lalu buka HP &gt; WhatsApp &gt; Perangkat Tertaut &gt; Tautkan dengan nomor telepon. Kode berlaku sekitar 60 detik.</p>
+            <p class="panel-sub">Ikuti urutan ini - kode cuma berlaku ~60 detik, jadi siapkan HP dulu SEBELUM klik "Minta Kode Pairing".</p>
+            <ul class="info-list" style="margin-bottom:20px;">
+              <li><span class="step-num">1</span><span>Di HP yang mau ditautkan, buka WhatsApp &rarr; <b style="color:var(--text)">Setelan</b> &rarr; <b style="color:var(--text)">Perangkat Tertaut</b> &rarr; <b style="color:var(--text)">Tautkan Perangkat</b> &rarr; pilih <b style="color:var(--text)">"Tautkan dengan nomor telepon"</b> (bukan scan QR), lalu berhenti di layar yang minta kode - JANGAN tutup dulu.</span></li>
+              <li><span class="step-num">2</span><span>Balik ke sini, isi nomor WA yang sama di form bawah (format <code>62812xxxxxxx</code>, tanpa + atau spasi), lalu klik <b style="color:var(--text)">Minta Kode Pairing</b>.</span></li>
+              <li><span class="step-num">3</span><span>Kode 8 digit langsung muncul di sini - buruan ketik ke layar HP tadi sebelum 60 detik habis. Kalau kelamaan, ulangi dari langkah 2 buat minta kode baru.</span></li>
+              <li><span class="step-num">4</span><span>Kalau berhasil, status di panel "Status Perangkat" di atas berubah jadi <b style="color:var(--st-read)">Perangkat terhubung</b> dalam beberapa detik.</span></li>
+            </ul>
             <div id="pairing-alert" class="alert"></div>
             <form id="pairing-form">
               <div class="field">
@@ -492,6 +504,7 @@
             </form>
             <div id="pairing-code-wrap" class="hidden" style="margin-top:16px; text-align:center;">
               <div style="font-family:'Sora'; font-size:32px; font-weight:800; letter-spacing:0.1em;" id="pairing-code"></div>
+              <p class="hint">Ketik kode ini di HP dalam ~60 detik.</p>
             </div>
           </div>
 

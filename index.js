@@ -261,17 +261,20 @@ async function requireAppAuth(req, res, next) {
     }
   }
 
+  // ponytail: SENGAJA tidak set header WWW-Authenticate di sini. Kalau di-set,
+  // browser (bukan cuma HTTP client) langsung nampilin dialog login native-nya
+  // sendiri begitu fetch() dari dashboard kena 401 - nimpa form login custom
+  // kita. Zona Kasir/aplikasi lain tidak butuh header ini karena mereka selalu
+  // ngirim Basic Auth duluan (preemptive), bukan nunggu challenge dulu.
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
   if (scheme !== 'Basic' || !encoded) {
-    res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
     return res.status(401).json({ error: 'Login aplikasi diperlukan (Basic Auth username/password, atau login sesi)' });
   }
   const [username, password] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
   try {
     const aplikasi = await loadAplikasi(username, password);
     if (!aplikasi) {
-      res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
       return res.status(401).json({ error: 'Username/password aplikasi salah, atau aplikasi nonaktif' });
     }
     req.aplikasi = aplikasi;
