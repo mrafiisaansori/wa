@@ -293,6 +293,10 @@ tbody tr:hover { background: var(--bg-subtle); }
 .modal-card { width: 100%; max-width: 460px; padding: 28px; position: relative; animation: scaleIn .18s var(--ease); }
 .modal-close { position: absolute; top: 16px; right: 16px; background: none; border: none; color: var(--text-muted); cursor: pointer; width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius-sm); }
 .modal-close:hover { background: var(--bg-subtle); color: var(--text); }
+@media (max-width: 480px) {
+  .modal-overlay { padding: 12px; }
+  .modal-card { padding: 20px; }
+}
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(.96) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }

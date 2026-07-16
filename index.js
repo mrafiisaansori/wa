@@ -240,6 +240,15 @@ app.use(session({
 // / kepegang file public/index.html (landing page).
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
+// Sub-route dashboard (/dashboard/perangkat, dst) - client-side routing pakai
+// history.pushState di dashboard.js, jadi tiap menu bisa direfresh langsung
+// tanpa balik ke section Dashboard. Ini cuma nyajiin shell HTML yang sama
+// (dashboard.js yang baca URL dan render section yang sesuai) - bukan
+// endpoint/logic baru, murni routing biar URL tetap benar pas di-refresh.
+app.get(['/dashboard/perangkat', '/dashboard/pesan', '/dashboard/apikey'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
 // ===== Auth admin (operator wagateway) - kredensial tunggal dari .env, buat
 // provisioning tenant baru. Ini BUKAN akun tenant. =====
 const requireDocsAuth = DOCS_PASS

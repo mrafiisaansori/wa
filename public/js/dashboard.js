@@ -46,7 +46,7 @@
     setupApiKey();
     setupHistoryTable();
     loadWhoAmI();
-    setSection('dashboard');
+    applySection(sectionFromPath()); // baca section dari URL (/dashboard/perangkat dsb) - bukan selalu default Dashboard
     loadDevice(); // inisialisasi status koneksi + mulai pantau kalau belum terhubung, apapun section yang lagi dibuka
   }
 
@@ -106,9 +106,21 @@
     });
   }
 
-  // ---------- Navigasi section ----------
+  // ---------- Navigasi section (tiap menu punya URL sendiri, /dashboard/nama -
+  // jadi refresh/bookmark/tombol back-forward tetap balik ke section yang
+  // sama, bukan selalu ke Dashboard. Backend cuma nyajiin shell HTML yang
+  // sama persis di /dashboard/perangkat dsb - dashboard.js ini yang baca
+  // URL-nya dan render section yang cocok.) ----------
   var sectionTitles = { dashboard: 'Dashboard', pesan: 'Pesan', perangkat: 'Perangkat', apikey: 'API Key' };
-  function setSection(name) {
+  var SECTION_NAMES = Object.keys(sectionTitles);
+
+  function sectionFromPath() {
+    var parts = window.location.pathname.split('/').filter(Boolean); // '/dashboard/perangkat' -> ['dashboard','perangkat']
+    var name = parts[1];
+    return SECTION_NAMES.indexOf(name) !== -1 ? name : 'dashboard';
+  }
+
+  function applySection(name) {
     document.querySelectorAll('.content-section').forEach(function (el) {
       el.classList.toggle('hidden', el.id !== 'section-' + name);
     });
@@ -122,11 +134,19 @@
     if (name === 'perangkat') { loadDevice(); loadDeviceMiniStats(); }
     if (name === 'apikey') { loadApiKeyStatus(); }
   }
+
+  function setSection(name) {
+    var url = name === 'dashboard' ? '/dashboard' : '/dashboard/' + name;
+    if (window.location.pathname !== url) history.pushState({ section: name }, '', url);
+    applySection(name);
+  }
+
   function setupNav() {
     document.querySelectorAll('[data-section]').forEach(function (el) {
       el.addEventListener('click', function () { setSection(el.getAttribute('data-section')); });
     });
     document.getElementById('nav-docs').addEventListener('click', function () { window.open('/docs/app', '_blank'); });
+    window.addEventListener('popstate', function () { applySection(sectionFromPath()); });
   }
 
   // ---------- Dashboard: stats + charts + activity ----------
@@ -616,11 +636,59 @@
     var nomorField = document.getElementById('send-nomor-field');
     var nomorListField = document.getElementById('send-nomor-list-field');
     var nomorHint = document.getElementById('send-nomor-hint');
+    var tagContainer = document.getElementById('send-nomor-tags');
+    var tagInput = document.getElementById('send-nomor-tag-input');
     var mode = 'single';
+    var broadcastNumbers = [];
+
+    function renderTags() {
+      tagContainer.querySelectorAll('.tag-chip').forEach(function (el) { el.remove(); });
+      broadcastNumbers.forEach(function (nomor, idx) {
+        var chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.innerHTML = escapeHtml(nomor) + '<button type="button" aria-label="Hapus ' + escapeHtml(nomor) + '">&times;</button>';
+        chip.querySelector('button').addEventListener('click', function () {
+          broadcastNumbers.splice(idx, 1);
+          renderTags();
+        });
+        tagContainer.insertBefore(chip, tagInput);
+      });
+    }
+
+    function addBroadcastNumber(raw) {
+      var nomor = String(raw || '').replace(/\D/g, '');
+      if (nomor.length < 9) return;
+      if (broadcastNumbers.indexOf(nomor) !== -1) return;
+      broadcastNumbers.push(nomor);
+    }
+
+    tagInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        addBroadcastNumber(tagInput.value);
+        tagInput.value = '';
+        renderTags();
+      } else if (e.key === 'Backspace' && !tagInput.value && broadcastNumbers.length) {
+        broadcastNumbers.pop();
+        renderTags();
+      }
+    });
+    tagInput.addEventListener('blur', function () {
+      if (tagInput.value.trim()) { addBroadcastNumber(tagInput.value); tagInput.value = ''; renderTags(); }
+    });
+    tagInput.addEventListener('paste', function (e) {
+      var text = (e.clipboardData || window.clipboardData).getData('text');
+      if (!/[\s,;]/.test(text)) return; // satu nomor saja - biarkan paste normal ke input
+      e.preventDefault();
+      text.split(/[\s,;]+/).forEach(addBroadcastNumber);
+      renderTags();
+    });
 
     function openModal(initialMode) {
       hideAlert(sendAlert);
       sendForm.reset();
+      broadcastNumbers = [];
+      renderTags();
       setMode(initialMode || 'single');
       modal.classList.remove('hidden');
     }
@@ -648,9 +716,9 @@
       var request;
 
       if (mode === 'broadcast') {
-        var list = document.getElementById('send-nomor-list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-        if (!list.length) { showAlert(sendAlert, 'Isi minimal 1 nomor.', 'error'); return; }
-        request = api.broadcast(pesan, list);
+        if (tagInput.value.trim()) { addBroadcastNumber(tagInput.value); tagInput.value = ''; renderTags(); }
+        if (!broadcastNumbers.length) { showAlert(sendAlert, 'Isi minimal 1 nomor.', 'error'); return; }
+        request = api.broadcast(pesan, broadcastNumbers);
       } else {
         var nomor = document.getElementById('send-nomor').value.trim();
         request = api.send(nomor, pesan);
