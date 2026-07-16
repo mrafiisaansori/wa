@@ -6,12 +6,6 @@
   backdrop-filter: blur(14px); border-bottom: 1px solid var(--border);
 }
 .lp-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 72px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
-.brand-mark {
-  width: 34px; height: 34px; border-radius: 10px; flex: none;
-  background: linear-gradient(135deg, var(--secondary), var(--primary));
-  display: grid; place-items: center; box-shadow: 0 10px 20px -10px rgba(22,163,74,.6);
-}
 .lp-nav-menu { display: flex; align-items: center; gap: 30px; }
 .lp-nav-menu a { font-size: 14px; font-weight: 600; color: var(--text-dim); transition: color .15s; }
 .lp-nav-menu a:hover { color: var(--text); }

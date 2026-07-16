@@ -19,6 +19,21 @@
   function showAlert(el, message, type) { el.textContent = message; el.className = 'alert show alert-' + (type || 'error'); }
   function hideAlert(el) { el.className = 'alert'; }
 
+  function showToast(message, type) {
+    var stack = document.getElementById('toast-stack');
+    var el = document.createElement('div');
+    el.className = 'toast toast-' + (type || 'success');
+    var icon = type === 'error'
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    el.innerHTML = '<span class="toast-icon">' + icon + '</span><span>' + escapeHtml(message) + '</span>';
+    stack.appendChild(el);
+    setTimeout(function () {
+      el.classList.add('leaving');
+      setTimeout(function () { el.remove(); }, 200);
+    }, 5000);
+  }
+
   function init() {
     setupSidebar();
     setupProfileMenu();
@@ -30,6 +45,7 @@
     setupHistoryTable();
     loadWhoAmI();
     setSection('dashboard');
+    loadDevice(); // inisialisasi status koneksi + mulai pantau kalau belum terhubung, apapun section yang lagi dibuka
   }
 
   // ---------- Sidebar collapse (desktop) + drawer (mobile) ----------
@@ -304,8 +320,25 @@
   }
 
   // ---------- Perangkat ----------
+  // Pantau status koneksi biar user tau device-nya berhasil tertaut TANPA
+  // harus pindah section atau reload manual - jalan di background (bukan
+  // cuma pas lagi buka section Perangkat) sampai device terhubung.
+  var lastKnownConnected = null;
+  var deviceWatchTimer = null;
+  function stopDeviceWatch() { if (deviceWatchTimer) { clearInterval(deviceWatchTimer); deviceWatchTimer = null; } }
+  function startDeviceWatch() {
+    if (deviceWatchTimer) return;
+    deviceWatchTimer = setInterval(loadDevice, 6000);
+  }
+
   function loadDevice() {
     api.device().then(function (data) {
+      if (data.connected && lastKnownConnected === false) {
+        showToast('Perangkat berhasil terhubung ke WhatsApp!', 'success');
+      }
+      lastKnownConnected = data.connected;
+      if (data.connected) stopDeviceWatch(); else startDeviceWatch();
+
       var pillText = data.connected ? 'Perangkat terhubung' : 'Perangkat belum terhubung';
       var pill = document.getElementById('device-status');
       pill.className = 'status-pill ' + (data.connected ? 'online' : 'offline');
