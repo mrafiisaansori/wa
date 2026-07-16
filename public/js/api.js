@@ -36,5 +36,8 @@ window.WazapiAPI = (function () {
     broadcast: function (pesan, nomorList) { return postJSON('/broadcast', { pesan: pesan, nomor_list: nomorList }); },
     history: function (limit) { return request('/history?limit=' + (limit || 50)); },
     stats: function () { return request('/stats'); },
+    apiKeyStatus: function () { return request('/api-key'); },
+    apiKeyGenerate: function () { return postJSON('/api-key/generate'); },
+    apiKeyRevoke: function () { return postJSON('/api-key/revoke'); },
   };
 })();

@@ -246,9 +246,11 @@ const requireDocsAuth = DOCS_PASS
   ? basicAuth({ users: { [DOCS_USER || 'admin']: DOCS_PASS }, challenge: true })
   : (req, res) => res.status(503).json({ error: 'Admin auth belum dikonfigurasi (DOCS_PASS kosong di .env)' });
 
-// ===== Auth aplikasi (tenant) - dua cara masuk yang keduanya cek ke tabel
-// `aplikasi` yang sama: sesi cookie (dashboard browser, dari POST /login) atau
-// Basic Auth (project pemanggil kayak Zona Kasir, tidak berubah dari sebelumnya). =====
+// ===== Auth aplikasi (tenant) - dua kredensial TERPISAH dengan sengaja:
+// username/password (bcrypt) cuma buat login sesi dashboard (POST /login,
+// /register), API key (SHA-256, Bearer token) cuma buat panggil REST API
+// (/send, /broadcast, /history, /stats, /device/*). Bocor satu tidak
+// otomatis bocorin yang lain, dan API key bisa dicabut tanpa ganti password. =====
 async function loadAplikasi(username, password) {
   const [rows] = await db.query(
     'SELECT id, nama, password_hash, aktif FROM aplikasi WHERE username = ? LIMIT 1',
@@ -257,6 +259,22 @@ async function loadAplikasi(username, password) {
   const row = rows[0];
   const valid = row && row.aktif && (await bcrypt.compare(password || '', row.password_hash));
   return valid ? { id: row.id, nama: row.nama } : null;
+}
+
+async function loadAplikasiFromSession(req) {
+  if (!req.session?.aplikasiId) return null;
+  const [rows] = await db.query('SELECT id, nama, aktif FROM aplikasi WHERE id = ? LIMIT 1', [req.session.aplikasiId]);
+  const row = rows[0];
+  if (!row || !row.aktif) return null;
+  return { id: row.id, nama: row.nama };
+}
+
+const API_KEY_PREFIX = 'wzp_live_';
+function generateApiKeyString() {
+  return API_KEY_PREFIX + crypto.randomBytes(24).toString('hex');
+}
+function hashApiKey(key) {
+  return crypto.createHash('sha256').update(key).digest('hex');
 }
 
 // Dipakai admin (POST /admin/aplikasi) MAUPUN pendaftaran mandiri (POST
@@ -272,42 +290,50 @@ async function createAplikasi(username, password, nama) {
   return result.insertId;
 }
 
+// Endpoint aplikasi (/send, /broadcast, /history, /stats, /device/*) - terima
+// sesi dashboard ATAU API key Bearer. ponytail: SENGAJA tidak set header
+// WWW-Authenticate di 401 manapun di sini - browser bisa nampilin dialog
+// login native-nya sendiri kalau header itu ada, nimpa form login custom kita.
 async function requireAppAuth(req, res, next) {
-  if (req.session?.aplikasiId) {
-    try {
-      const [rows] = await db.query('SELECT id, nama, aktif FROM aplikasi WHERE id = ? LIMIT 1', [req.session.aplikasiId]);
-      const row = rows[0];
-      if (!row || !row.aktif) {
-        return req.session.destroy(() => res.status(401).json({ error: 'Sesi tidak valid, silakan login lagi' }));
-      }
-      req.aplikasi = { id: row.id, nama: row.nama };
-      return next();
-    } catch (err) {
-      return res.status(500).json({ error: 'Gagal cek sesi: ' + err.message });
+  try {
+    const sessionAplikasi = await loadAplikasiFromSession(req);
+    if (sessionAplikasi) { req.aplikasi = sessionAplikasi; return next(); }
+    if (req.session?.aplikasiId) {
+      return req.session.destroy(() => res.status(401).json({ error: 'Sesi tidak valid, silakan login lagi' }));
     }
+  } catch (err) {
+    return res.status(500).json({ error: 'Gagal cek sesi: ' + err.message });
   }
 
-  // ponytail: SENGAJA tidak set header WWW-Authenticate di sini. Kalau di-set,
-  // browser (bukan cuma HTTP client) langsung nampilin dialog login native-nya
-  // sendiri begitu fetch() dari dashboard kena 401 - nimpa form login custom
-  // kita. Zona Kasir/aplikasi lain tidak butuh header ini karena mereka selalu
-  // ngirim Basic Auth duluan (preemptive), bukan nunggu challenge dulu.
   const header = req.headers.authorization || '';
-  const [scheme, encoded] = header.split(' ');
-  if (scheme !== 'Basic' || !encoded) {
-    return res.status(401).json({ error: 'Login aplikasi diperlukan (Basic Auth username/password, atau login sesi)' });
+  const [scheme, token] = header.split(' ');
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ error: 'Login aplikasi diperlukan (API key Bearer token, atau login sesi)' });
   }
-  const [username, password] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
   try {
-    const aplikasi = await loadAplikasi(username, password);
-    if (!aplikasi) {
-      return res.status(401).json({ error: 'Username/password aplikasi salah, atau aplikasi nonaktif' });
+    const hash = hashApiKey(token.trim());
+    const [rows] = await db.query('SELECT id, nama, aktif FROM aplikasi WHERE api_key_hash = ? LIMIT 1', [hash]);
+    const row = rows[0];
+    if (!row || !row.aktif) {
+      return res.status(401).json({ error: 'API key salah, sudah dicabut, atau aplikasi nonaktif' });
     }
-    req.aplikasi = aplikasi;
+    req.aplikasi = { id: row.id, nama: row.nama };
+    db.query('UPDATE aplikasi SET api_key_last_used_at = NOW() WHERE id = ?', [row.id]).catch(() => {});
     next();
   } catch (err) {
-    res.status(500).json({ error: 'Gagal cek login aplikasi: ' + err.message });
+    res.status(500).json({ error: 'Gagal cek API key: ' + err.message });
   }
+}
+
+// Kelola API key (generate/lihat/cabut) SENGAJA cuma terima sesi dashboard,
+// TIDAK terima API key - supaya key yang bocor tidak bisa dipakai buat
+// regenerate/cabut key itu sendiri atau lihat metadatanya.
+function requireSession(req, res, next) {
+  loadAplikasiFromSession(req).then((aplikasi) => {
+    if (!aplikasi) return res.status(401).json({ error: 'Wajib login sesi dashboard - API key tidak berlaku untuk kelola API key sendiri' });
+    req.aplikasi = aplikasi;
+    next();
+  }).catch((err) => res.status(500).json({ error: 'Gagal cek sesi: ' + err.message }));
 }
 
 // ===== Auth khusus buka halaman /docs/app - terima sesi tenant (dashboard
@@ -380,7 +406,48 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// ===== Endpoint aplikasi (butuh login /aplikasi - sesi atau Basic) =====
+// ===== API Key (kredensial buat panggil REST API - terpisah dari password
+// login). Sengaja requireSession, bukan requireAppAuth - lihat komentar di
+// definisi requireSession. =====
+
+app.get('/api-key', requireSession, async (req, res) => {
+  const [rows] = await db.query(
+    'SELECT api_key_prefix, api_key_generated_at, api_key_last_used_at FROM aplikasi WHERE id = ?',
+    [req.aplikasi.id]
+  );
+  const row = rows[0];
+  res.json({
+    ada: !!row.api_key_prefix,
+    prefix: row.api_key_prefix,
+    dibuat_at: row.api_key_generated_at,
+    terakhir_dipakai: row.api_key_last_used_at,
+  });
+});
+
+app.post('/api-key/generate', requireSession, async (req, res) => {
+  const rawKey = generateApiKeyString();
+  const hash = hashApiKey(rawKey);
+  const prefix = rawKey.slice(0, 16);
+  await db.query(
+    'UPDATE aplikasi SET api_key_hash = ?, api_key_prefix = ?, api_key_generated_at = NOW(), api_key_last_used_at = NULL WHERE id = ?',
+    [hash, prefix, req.aplikasi.id]
+  );
+  res.json({
+    api_key: rawKey,
+    prefix,
+    catatan: 'Simpan sekarang - kode lengkap TIDAK akan ditampilkan lagi setelah ini. Kalau sebelumnya sudah ada API key, key lama langsung tidak berlaku.',
+  });
+});
+
+app.post('/api-key/revoke', requireSession, async (req, res) => {
+  await db.query(
+    'UPDATE aplikasi SET api_key_hash = NULL, api_key_prefix = NULL, api_key_generated_at = NULL, api_key_last_used_at = NULL WHERE id = ?',
+    [req.aplikasi.id]
+  );
+  res.json({ success: true });
+});
+
+// ===== Endpoint aplikasi (butuh login /aplikasi - sesi atau API key) =====
 
 app.post('/send', requireAppAuth, async (req, res) => {
   const { nomor, pesan } = req.body || {};

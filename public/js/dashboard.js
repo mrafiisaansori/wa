@@ -42,6 +42,7 @@
     setupModal();
     setupPairing();
     setupUnlink();
+    setupApiKey();
     setupHistoryTable();
     loadWhoAmI();
     setSection('dashboard');
@@ -105,7 +106,7 @@
   }
 
   // ---------- Navigasi section ----------
-  var sectionTitles = { dashboard: 'Dashboard', pesan: 'Pesan', perangkat: 'Perangkat' };
+  var sectionTitles = { dashboard: 'Dashboard', pesan: 'Pesan', perangkat: 'Perangkat', apikey: 'API Key' };
   function setSection(name) {
     document.querySelectorAll('.content-section').forEach(function (el) {
       el.classList.toggle('hidden', el.id !== 'section-' + name);
@@ -118,6 +119,7 @@
     if (name === 'dashboard') { loadDashboardData(); }
     if (name === 'pesan') { loadHistory(); }
     if (name === 'perangkat') { loadDevice(); }
+    if (name === 'apikey') { loadApiKeyStatus(); }
   }
   function setupNav() {
     document.querySelectorAll('[data-section]').forEach(function (el) {
@@ -520,6 +522,71 @@
         showAlert(sendAlert, err.message, 'error');
       }).finally(function () {
         sendSubmit.disabled = false; sendSubmit.textContent = 'Kirim Pesan';
+      });
+    });
+  }
+
+  // ---------- API Key ----------
+  function loadApiKeyStatus() {
+    var pill = document.getElementById('apikey-status');
+    api.apiKeyStatus().then(function (data) {
+      pill.className = 'status-pill ' + (data.ada ? 'online' : 'offline');
+      pill.innerHTML = '<span class="led"></span> ' + (data.ada ? 'API key aktif' : 'Belum ada API key');
+      document.getElementById('apikey-prefix').textContent = data.ada ? (data.prefix + '••••') : '-';
+      document.getElementById('apikey-created').textContent = data.dibuat_at ? fmtDate(data.dibuat_at) : '-';
+      document.getElementById('apikey-last-used').textContent = data.terakhir_dipakai ? fmtDate(data.terakhir_dipakai) : 'Belum pernah dipakai';
+      document.getElementById('apikey-revoke-btn').disabled = !data.ada;
+    }).catch(function () {
+      pill.className = 'status-pill offline';
+      pill.innerHTML = '<span class="led"></span> Gagal memuat status';
+    });
+  }
+
+  function setupApiKey() {
+    var alertEl = document.getElementById('apikey-alert');
+    var newWrap = document.getElementById('apikey-new-wrap');
+    var newValue = document.getElementById('apikey-new-value');
+    var generateBtn = document.getElementById('apikey-generate-btn');
+    var revokeBtn = document.getElementById('apikey-revoke-btn');
+
+    generateBtn.addEventListener('click', function () {
+      var sudahAda = document.getElementById('apikey-prefix').textContent !== '-';
+      if (sudahAda && !confirm('Sudah ada API key aktif - generate baru bikin key LAMA langsung tidak berlaku. Lanjut?')) return;
+      hideAlert(alertEl);
+      generateBtn.disabled = true; generateBtn.textContent = 'Membuat...';
+      api.apiKeyGenerate().then(function (data) {
+        newValue.textContent = data.api_key;
+        newWrap.classList.remove('hidden');
+        showAlert(alertEl, data.catatan, 'success');
+        loadApiKeyStatus();
+      }).catch(function (err) {
+        showAlert(alertEl, err.message, 'error');
+      }).finally(function () {
+        generateBtn.disabled = false; generateBtn.textContent = 'Generate API Key Baru';
+      });
+    });
+
+    document.getElementById('apikey-copy-btn').addEventListener('click', function () {
+      var btn = document.getElementById('apikey-copy-btn');
+      navigator.clipboard.writeText(newValue.textContent).then(function () {
+        var original = btn.textContent;
+        btn.textContent = 'Tersalin!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      }).catch(function () { alert('Gagal menyalin, salin manual saja.'); });
+    });
+
+    revokeBtn.addEventListener('click', function () {
+      if (!confirm('Cabut API key? Semua integrasi yang masih pakai key ini langsung berhenti bisa akses API.')) return;
+      hideAlert(alertEl);
+      revokeBtn.disabled = true;
+      api.apiKeyRevoke().then(function () {
+        newWrap.classList.add('hidden');
+        showAlert(alertEl, 'API key dicabut.', 'success');
+        loadApiKeyStatus();
+      }).catch(function (err) {
+        showAlert(alertEl, err.message, 'error');
+      }).finally(function () {
+        revokeBtn.disabled = false;
       });
     });
   }
