@@ -75,7 +75,7 @@
 /* --- Reset --- */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -84,10 +84,12 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   transition: background-color .2s var(--ease), color .2s var(--ease);
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 img, svg { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
-button { font-family: inherit; }
+button { font-family: inherit; color: inherit; }
 h1, h2, h3, h4 { font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
 p { margin: 0; }
 ul { margin: 0; padding: 0; list-style: none; }
@@ -238,6 +240,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 .status-pill.online .led { background: var(--success); box-shadow: 0 0 8px var(--success); }
 .status-pill.offline { color: var(--danger); border-color: rgba(239,68,68,.3); background: var(--danger-soft); }
 .status-pill.offline .led { background: var(--danger); }
+.status-pill.reconnecting { color: #B45309; border-color: rgba(245,158,11,.35); background: var(--warning-soft); }
+.status-pill.reconnecting .led { background: var(--warning); animation: pulseDot 1.2s ease-in-out infinite; }
+@keyframes pulseDot { 0%, 100% { box-shadow: 0 0 0 0 var(--warning-soft); } 50% { box-shadow: 0 0 0 5px transparent; } }
+:root[data-theme="dark"] .status-pill.reconnecting { color: #FBBF24; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .status-pill.reconnecting { color: #FBBF24; } }
+.status-pill.neutral { color: var(--text-muted); border-color: var(--border); background: var(--bg-subtle); }
+.status-pill.neutral .led { background: var(--text-muted); }
 
 /* =========================================================================
    Alert

@@ -160,3 +160,169 @@
 .segmented { display: inline-flex; padding: 3px; background: var(--bg-subtle); border-radius: var(--radius-md); margin-bottom: 18px; }
 .segmented button { border: none; background: none; padding: 7px 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer; font-family: inherit; }
 .segmented button.active { background: var(--card); color: var(--primary); box-shadow: var(--shadow-sm); }
+
+/* =========================================================================
+   Perangkat (Device) - hero connect card, phone visualization, status card,
+   mini stats, quick actions, timeline, modal QR/pairing.
+   ========================================================================= */
+
+/* --- Hero connect / empty-state card --- */
+.device-hero {
+  display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 32px; align-items: center;
+  padding: 34px; border-radius: 24px; margin-bottom: 20px; overflow: hidden; position: relative;
+}
+.device-hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .06;
+  background: radial-gradient(circle at 15% 20%, var(--primary), transparent 55%), radial-gradient(circle at 90% 85%, var(--secondary), transparent 50%);
+}
+.device-hero-copy { position: relative; }
+.device-hero-copy h2 { font-size: 22px; margin-bottom: 8px; }
+.device-hero-copy > p.panel-sub { font-size: 13.5px; margin-bottom: 22px; max-width: 42ch; }
+.device-hero-copy .field-float { margin-bottom: 6px; }
+.device-hero-copy .field-hint { margin: -2px 0 18px; }
+
+/* --- Illustration: phone <-> cloud <-> dashboard chain --- */
+.device-illustration { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; }
+.illus-node {
+  width: 56px; height: 56px; border-radius: var(--radius-lg); background: var(--bg-subtle); border: 1px solid var(--border);
+  display: grid; place-items: center; color: var(--text-dim); flex: none; position: relative; z-index: 1;
+}
+.illus-node.illus-cloud { color: var(--primary); animation: floatY 4s ease-in-out infinite; }
+.illus-line {
+  flex: 1; height: 2px; min-width: 24px; max-width: 56px;
+  background: repeating-linear-gradient(90deg, var(--primary) 0 6px, transparent 6px 12px);
+  background-size: 200% 100%; opacity: .5;
+}
+.illus-line.is-live { animation: lineFlow 1.2s linear infinite; opacity: 1; }
+@keyframes lineFlow { from { background-position: 0 0; } to { background-position: -24px 0; } }
+@keyframes floatY { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+/* --- Phone mockup --- */
+.phone-mock-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.phone-mock { width: 108px; height: 208px; position: relative; flex: none; }
+.phone-mock-body {
+  width: 100%; height: 100%; border-radius: 22px; background: var(--dark); border: 3px solid var(--dark);
+  box-shadow: var(--shadow-lg); position: relative; overflow: hidden; transition: box-shadow .3s var(--ease);
+}
+.phone-mock-notch { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 34px; height: 5px; border-radius: 999px; background: rgba(255,255,255,.25); z-index: 2; }
+.phone-mock-screen {
+  position: absolute; inset: 4px; border-radius: 18px; display: grid; place-items: center;
+  background: #0b1220; transition: background .35s var(--ease);
+}
+.phone-mock-icon { position: absolute; opacity: 0; transform: scale(.7); transition: opacity .3s var(--ease), transform .3s var(--ease); color: #fff; }
+.phone-mock-icon.is-active { opacity: 1; transform: scale(1); }
+.phone-mock-icon.icon-spinner.is-active { animation: spin 1s linear infinite; }
+.phone-mock-badge {
+  position: absolute; bottom: -6px; right: -6px; width: 32px; height: 32px; border-radius: 999px;
+  display: grid; place-items: center; border: 3px solid var(--card); background: var(--text-muted); color: #fff;
+  transition: background .3s var(--ease), transform .2s var(--ease); transform: scale(0); z-index: 3;
+}
+.phone-mock-badge.is-visible { transform: scale(1); }
+
+.phone-mock[data-state="not-connected"] .phone-mock-screen { background: repeating-linear-gradient(45deg, #111827, #111827 8px, #0b1220 8px, #0b1220 16px); }
+.phone-mock[data-state="not-connected"] .phone-mock-body { animation: pulseSoft 2.6s ease-in-out infinite; }
+.phone-mock[data-state="connected"] .phone-mock-body { box-shadow: 0 0 0 6px var(--primary-soft), var(--shadow-lg); }
+.phone-mock[data-state="connected"] .phone-mock-screen { background: radial-gradient(circle at 50% 40%, #14532d, #0b1220 75%); }
+.phone-mock[data-state="connected"] .phone-mock-badge { background: var(--success); }
+.phone-mock[data-state="reconnecting"] .phone-mock-screen { background: radial-gradient(circle at 50% 40%, #78350f, #0b1220 75%); }
+.phone-mock[data-state="reconnecting"] .phone-mock-badge { background: var(--warning); }
+.phone-mock[data-state="disconnected"] .phone-mock-screen { background: radial-gradient(circle at 50% 40%, #7f1d1d, #0b1220 75%); }
+.phone-mock[data-state="disconnected"] .phone-mock-badge { background: var(--danger); }
+@keyframes pulseSoft { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.15); } }
+
+/* Success burst when a device just connects */
+.phone-mock.just-connected .phone-mock-body { animation: connectGlow .9s var(--ease); }
+@keyframes connectGlow {
+  0% { box-shadow: 0 0 0 0 var(--primary-soft), var(--shadow-lg); }
+  50% { box-shadow: 0 0 0 14px var(--primary-soft), var(--shadow-lg); }
+  100% { box-shadow: 0 0 0 6px var(--primary-soft), var(--shadow-lg); }
+}
+
+@media (max-width: 900px) {
+  .device-hero { grid-template-columns: 1fr; }
+  .device-illustration { order: -1; margin-bottom: 8px; }
+}
+
+/* --- Status card --- */
+.device-status-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.device-info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 20px; }
+.device-info-item { display: flex; gap: 10px; align-items: flex-start; }
+.device-info-icon { width: 34px; height: 34px; border-radius: var(--radius-md); background: var(--bg-subtle); color: var(--text-dim); display: grid; place-items: center; flex: none; }
+.device-info-item .label { display: block; font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.device-info-item .value { display: block; font-size: 13.5px; font-weight: 600; color: var(--text); margin-top: 2px; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .device-info-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .device-info-grid { grid-template-columns: 1fr; } }
+
+/* --- Mini stats (Perangkat) --- */
+.mini-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.mini-stat-card { padding: 16px; display: flex; align-items: center; gap: 12px; }
+.mini-stat-icon { width: 38px; height: 38px; border-radius: var(--radius-md); display: grid; place-items: center; flex: none; background: var(--primary-soft); color: var(--primary); }
+.mini-stat-card .value { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.mini-stat-card .label { font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 900px) { .mini-stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* --- Quick actions (Perangkat) --- */
+.device-action-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.device-action-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 10px; text-align: center;
+  background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer;
+  font-size: 12.5px; font-weight: 700; color: var(--text-dim); transition: transform .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
+}
+.device-action-btn:hover { transform: translateY(-2px); border-color: var(--primary); color: var(--primary); }
+.device-action-btn.is-danger:hover { border-color: var(--danger); color: var(--danger); }
+.device-action-btn svg { width: 20px; height: 20px; }
+@media (max-width: 640px) { .device-action-row { grid-template-columns: repeat(2, 1fr); } }
+
+/* --- Timeline --- */
+.device-timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.device-timeline li { display: flex; gap: 14px; padding-bottom: 20px; position: relative; }
+.device-timeline li:last-child { padding-bottom: 0; }
+.device-timeline li::before {
+  content: ""; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--border);
+}
+.device-timeline li:last-child::before { display: none; }
+.timeline-dot { width: 28px; height: 28px; border-radius: 999px; flex: none; display: grid; place-items: center; background: var(--bg-subtle); color: var(--text-dim); z-index: 1; }
+.timeline-dot.dot-success { background: rgba(34,197,94,.14); color: var(--success); }
+.timeline-dot.dot-warning { background: var(--warning-soft); color: var(--warning); }
+.timeline-dot.dot-danger { background: var(--danger-soft); color: var(--danger); }
+.timeline-dot.dot-primary { background: var(--primary-soft); color: var(--primary); }
+.timeline-body .title { font-size: 13px; font-weight: 700; color: var(--text); }
+.timeline-body .time { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+/* --- Pairing modal (QR + steps, wider) --- */
+.modal-card-lg { max-width: 620px; }
+.pairing-modal-body { display: grid; grid-template-columns: 1fr 1.1fr; gap: 28px; margin-top: 4px; }
+.pairing-qr-box {
+  display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 18px; border-radius: var(--radius-lg);
+  background: var(--bg-subtle); border: 1px solid var(--border);
+}
+.pairing-qr-frame {
+  width: 200px; height: 200px; background: #fff; border-radius: var(--radius-md); display: grid; place-items: center;
+  box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
+}
+.pairing-countdown { width: 100%; height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.pairing-countdown-bar { height: 100%; width: 100%; background: var(--primary); transform-origin: left; }
+.pairing-countdown-bar.is-counting { animation: countdownShrink 20s linear forwards; }
+.pairing-countdown-bar.is-counting-60 { animation: countdownShrink 60s linear forwards; }
+@keyframes countdownShrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.pairing-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.pairing-steps li { display: flex; gap: 12px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+.pairing-live-status {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-dim);
+  padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-subtle); margin-top: 6px;
+}
+.pairing-live-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--text-muted); flex: none; }
+.pairing-live-status.is-waiting .pairing-live-dot { background: var(--warning); animation: pulseDot 1.2s ease-in-out infinite; }
+
+@media (max-width: 640px) {
+  .pairing-modal-body { grid-template-columns: 1fr; }
+}
+
+/* --- Confetti --- */
+.confetti-piece {
+  position: fixed; top: -12px; width: 8px; height: 14px; border-radius: 2px; z-index: 200; pointer-events: none;
+  animation: confettiFall linear forwards;
+}
+@keyframes confettiFall {
+  to { transform: translateY(105vh) rotate(540deg); opacity: .2; }
+}

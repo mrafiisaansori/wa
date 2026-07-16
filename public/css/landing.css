@@ -14,6 +14,10 @@
 
 @media (max-width: 860px) {
   .lp-nav-menu { display: none; }
+  /* Login/Mulai Sekarang inline diganti hamburger - dua-duanya sudah ada di
+     drawer, jadi jangan ditampilkan dobel (penyebab navbar kelebaran/overflow
+     horizontal di HP). */
+  .lp-nav-actions a.btn { display: none; }
   .lp-nav-toggle { display: inline-flex; }
 }
 

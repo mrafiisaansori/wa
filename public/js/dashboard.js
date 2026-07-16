@@ -42,6 +42,7 @@
     setupModal();
     setupPairing();
     setupUnlink();
+    setupDeviceActions();
     setupApiKey();
     setupHistoryTable();
     loadWhoAmI();
@@ -118,7 +119,7 @@
     if (name !== 'perangkat') stopQrPolling();
     if (name === 'dashboard') { loadDashboardData(); }
     if (name === 'pesan') { loadHistory(); }
-    if (name === 'perangkat') { loadDevice(); }
+    if (name === 'perangkat') { loadDevice(); loadDeviceMiniStats(); }
     if (name === 'apikey') { loadApiKeyStatus(); }
   }
   function setupNav() {
@@ -325,60 +326,135 @@
   // Pantau status koneksi biar user tau device-nya berhasil tertaut TANPA
   // harus pindah section atau reload manual - jalan di background (bukan
   // cuma pas lagi buka section Perangkat) sampai device terhubung.
+  var DEVICE_LABEL_KEY = 'wazapp-device-label';
   var lastKnownConnected = null;
   var deviceWatchTimer = null;
+  var pairingMode = 'qr';
+  var qrPollTimer = null;
+  var pairingModalOpen = false;
+
   function stopDeviceWatch() { if (deviceWatchTimer) { clearInterval(deviceWatchTimer); deviceWatchTimer = null; } }
   function startDeviceWatch() {
     if (deviceWatchTimer) return;
     deviceWatchTimer = setInterval(loadDevice, 6000);
   }
 
+  // Klasifikasi status dari data REAL yang ada - tidak ada field "reconnecting"
+  // tersendiri dari server, tapi percobaan_reconnect > 0 saat belum connected
+  // adalah sinyal jujur bahwa itu lagi proses sambung ulang, bukan diam total.
+  function classifyDeviceState(data) {
+    if (!data.nomor) return 'not-connected';
+    if (data.connected) return 'connected';
+    if (data.percobaan_reconnect > 0) return 'reconnecting';
+    return 'disconnected';
+  }
+  var STATE_LABEL = {
+    connected: 'Perangkat terhubung', reconnecting: 'Menyambungkan ulang...',
+    disconnected: 'Perangkat terputus', 'not-connected': 'Belum ada perangkat',
+  };
+  var STATE_PILL_CLASS = { connected: 'online', reconnecting: 'reconnecting', disconnected: 'offline', 'not-connected': 'neutral' };
+  var STATE_ICON_CLASS = { connected: 'icon-wa', reconnecting: 'icon-spinner', disconnected: 'icon-warn', 'not-connected': 'icon-qr' };
+
+  function renderPhoneMock(state, justConnected) {
+    var phone = document.getElementById('phone-mock');
+    phone.setAttribute('data-state', state);
+    phone.querySelectorAll('.phone-mock-icon').forEach(function (ic) { ic.classList.remove('is-active'); });
+    var iconEl = phone.querySelector('.' + STATE_ICON_CLASS[state]);
+    if (iconEl) iconEl.classList.add('is-active');
+    document.getElementById('phone-mock-badge').classList.toggle('is-visible', state === 'connected');
+    document.querySelectorAll('.illus-line').forEach(function (l) { l.classList.toggle('is-live', state === 'connected'); });
+    if (justConnected) {
+      phone.classList.add('just-connected');
+      setTimeout(function () { phone.classList.remove('just-connected'); }, 900);
+    }
+  }
+
+  function refreshHeroCopy(state) {
+    var label = (localStorage.getItem(DEVICE_LABEL_KEY) || '').trim();
+    document.getElementById('device-hero-title').textContent = label
+      ? label
+      : (state === 'connected' ? 'Perangkat WhatsApp Terhubung' : 'Hubungkan Perangkat WhatsApp');
+    document.getElementById('device-hero-connect-btn').classList.toggle('hidden', state === 'connected');
+  }
+
+  function renderDeviceTimeline(log) {
+    var el = document.getElementById('device-log-list');
+    if (!log.length) { el.innerHTML = '<li class="empty-state">Belum ada riwayat koneksi.</li>'; return; }
+    var meta = {
+      connected: { dot: 'dot-success', label: 'Perangkat terhubung' },
+      disconnected: { dot: 'dot-warning', label: 'Koneksi terputus' },
+      logged_out: { dot: 'dot-danger', label: 'Sesi logout dari HP' },
+      pairing_requested: { dot: 'dot-primary', label: 'Kode/QR pairing diminta' },
+      device_unlinked: { dot: 'dot-danger', label: 'Perangkat diputus manual' },
+    };
+    el.innerHTML = log.map(function (r) {
+      var m = meta[r.event] || { dot: '', label: r.event };
+      return '<li>' +
+        '<span class="timeline-dot ' + m.dot + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg></span>' +
+        '<span class="timeline-body"><span class="title">' + escapeHtml(m.label) + (r.detail ? ' - ' + escapeHtml(r.detail) : '') + '</span><span class="time">' + fmtDate(r.dicatat_at) + '</span></span>' +
+      '</li>';
+    }).join('');
+  }
+
   function loadDevice() {
-    api.device().then(function (data) {
-      if (data.connected && lastKnownConnected === false) {
+    return api.device().then(function (data) {
+      var state = classifyDeviceState(data);
+      var justConnected = data.connected && lastKnownConnected === false;
+      if (justConnected) {
         showToast('Perangkat berhasil terhubung ke WhatsApp!', 'success');
+        burstConfetti();
+        closePairingModal();
       }
       lastKnownConnected = data.connected;
-      if (data.connected) stopDeviceWatch(); else startDeviceWatch();
+      if (data.connected) { stopDeviceWatch(); stopQrPolling(); } else { startDeviceWatch(); }
 
-      var pillText = data.connected ? 'Perangkat terhubung' : 'Perangkat belum terhubung';
+      renderPhoneMock(state, justConnected);
       var pill = document.getElementById('device-status');
-      pill.className = 'status-pill ' + (data.connected ? 'online' : 'offline');
-      pill.innerHTML = '<span class="led"></span> ' + pillText;
+      pill.className = 'status-pill ' + STATE_PILL_CLASS[state];
+      pill.innerHTML = '<span class="led"></span> ' + STATE_LABEL[state];
+      refreshHeroCopy(state);
 
       document.getElementById('device-nomor').textContent = data.nomor || '-';
       document.getElementById('device-nama-wa').textContent = data.nama_wa || '-';
       document.getElementById('device-platform').textContent = data.platform || '-';
       document.getElementById('device-nama-perangkat').textContent = data.nama_perangkat || '-';
       document.getElementById('device-terhubung-sejak').textContent = data.terhubung_sejak ? fmtDate(data.terhubung_sejak) : '-';
-      document.getElementById('device-antrian').textContent = data.antrian;
       document.getElementById('device-reconnect').textContent = data.percobaan_reconnect;
+      document.getElementById('mini-stat-status').textContent = STATE_LABEL[state];
+      document.getElementById('mini-stat-queue').textContent = data.antrian;
 
-      var panelPairing = document.getElementById('panel-pairing');
-      if (panelPairing) panelPairing.classList.toggle('hidden', !!data.nomor);
-      if (data.connected) stopQrPolling();
-      else if (pairingMode === 'qr') startQrPolling();
+      renderDeviceTimeline(data.riwayat_koneksi || []);
 
-      var log = data.riwayat_koneksi || [];
-      var logList = document.getElementById('device-log-list');
-      if (!log.length) {
-        logList.innerHTML = '<li class="empty-state">Belum ada riwayat koneksi.</li>';
-      } else {
-        logList.innerHTML = log.map(function (r) {
-          return '<li class="activity-row">' +
-            '<span class="activity-msg">' + escapeHtml(r.event) + (r.detail ? ' - ' + escapeHtml(r.detail) : '') + '</span>' +
-            '<span class="activity-time">' + fmtDate(r.dicatat_at) + '</span>' +
-          '</li>';
-        }).join('');
+      if (pairingModalOpen) {
+        document.getElementById('pairing-live-text').textContent = data.connected ? 'Terhubung!' : 'Menunggu HP kamu scan/masukkan kode...';
+        document.getElementById('pairing-live-status').classList.toggle('is-waiting', !data.connected);
       }
     }).catch(function () { /* diamkan, guard sesi sudah nangani 401 di awal load */ });
   }
 
-  var pairingMode = 'code';
-  var qrPollTimer = null;
+  // Cuma dihitung dari /history yang sudah ada (bukan endpoint baru) - jumlah
+  // pesan hari ini per status, buat mini-stat "Terkirim/Gagal Hari Ini".
+  function loadDeviceMiniStats() {
+    api.history(200).then(function (rows) {
+      var todayKey = new Date().toISOString().slice(0, 10);
+      var sentToday = 0, failedToday = 0;
+      rows.forEach(function (r) {
+        if (String(r.dibuat_at).slice(0, 10) !== todayKey) return;
+        if (r.status === 'gagal') failedToday += 1;
+        else if (r.status !== 'antri') sentToday += 1;
+      });
+      document.getElementById('mini-stat-sent-today').textContent = sentToday;
+      document.getElementById('mini-stat-failed-today').textContent = failedToday;
+    }).catch(function () { /* biarkan tampil placeholder */ });
+  }
 
-  function stopQrPolling() {
-    if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; }
+  // ---------- QR & kode pairing (dalam modal) ----------
+  function stopQrPolling() { if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; } }
+
+  function resetCountdown(el, className) {
+    el.classList.remove('is-counting', 'is-counting-60');
+    void el.offsetWidth; // paksa reflow biar animasi CSS restart dari awal
+    el.classList.add(className);
   }
 
   function fetchQr() {
@@ -393,12 +469,9 @@
       img.classList.remove('hidden');
       loading.classList.add('hidden');
       statusText.textContent = 'QR diperbarui otomatis tiap ±20 detik.';
+      resetCountdown(document.getElementById('qr-countdown-bar'), 'is-counting');
     }).catch(function (err) {
-      if (err.status === 400) {
-        // Sudah tertaut - loadDevice() bakal nyembunyiin panel ini sebentar lagi.
-        stopQrPolling();
-        return;
-      }
+      if (err.status === 400) { stopQrPolling(); return; } // sudah tertaut
       statusText.textContent = err.message;
     });
   }
@@ -412,10 +485,25 @@
     qrPollTimer = setInterval(fetchQr, 20000);
   }
 
+  function openPairingModal() {
+    pairingModalOpen = true;
+    document.getElementById('modal-pairing').classList.remove('hidden');
+    document.getElementById('pairing-live-status').classList.add('is-waiting');
+    document.getElementById('pairing-live-text').textContent = 'Menunggu HP kamu scan/masukkan kode...';
+    if (pairingMode === 'qr') startQrPolling();
+  }
+  function closePairingModal() {
+    pairingModalOpen = false;
+    document.getElementById('modal-pairing').classList.add('hidden');
+    stopQrPolling();
+  }
+
   function setupPairing() {
     var modeToggle = document.getElementById('pairing-mode-toggle');
     var codeBlock = document.getElementById('pairing-mode-code');
     var qrBlock = document.getElementById('pairing-mode-qr');
+    var stepsQr = document.getElementById('pairing-steps-qr');
+    var stepsCode = document.getElementById('pairing-steps-code');
 
     modeToggle.querySelectorAll('button').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -423,6 +511,8 @@
         modeToggle.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b === btn); });
         codeBlock.classList.toggle('hidden', pairingMode !== 'code');
         qrBlock.classList.toggle('hidden', pairingMode !== 'qr');
+        stepsCode.classList.toggle('hidden', pairingMode !== 'code');
+        stepsQr.classList.toggle('hidden', pairingMode !== 'qr');
         if (pairingMode === 'qr') startQrPolling(); else stopQrPolling();
       });
     });
@@ -438,6 +528,7 @@
       api.pairingCode(nomor).then(function (data) {
         document.getElementById('pairing-code').textContent = data.code;
         document.getElementById('pairing-code-wrap').classList.remove('hidden');
+        resetCountdown(document.getElementById('code-countdown-bar'), 'is-counting-60');
         showAlert(alertEl, data.catatan || 'Kode diterbitkan.', 'success');
       }).catch(function (err) {
         showAlert(alertEl, err.message, 'error');
@@ -445,19 +536,74 @@
         btn.disabled = false; btn.textContent = 'Minta Kode Pairing';
       });
     });
+
+    document.getElementById('device-hero-connect-btn').addEventListener('click', openPairingModal);
+    document.getElementById('qa-open-pairing').addEventListener('click', openPairingModal);
+    document.getElementById('close-pairing-modal').addEventListener('click', closePairingModal);
+    document.getElementById('modal-pairing').addEventListener('click', function (e) {
+      if (e.target === document.getElementById('modal-pairing')) closePairingModal();
+    });
   }
 
   function setupUnlink() {
-    document.getElementById('unlink-btn').addEventListener('click', function () {
+    document.getElementById('qa-unlink').addEventListener('click', function () {
       if (!confirm('Putuskan perangkat WA dari akun ini? Perlu pairing ulang setelah ini.')) return;
-      var btn = document.getElementById('unlink-btn');
+      var btn = document.getElementById('qa-unlink');
       btn.disabled = true;
       api.deviceLogout().then(function () {
         document.getElementById('pairing-code-wrap').classList.add('hidden');
         loadDevice();
-      }).catch(function () { alert('Gagal memutuskan perangkat.'); })
+        showToast('Perangkat diputus.', 'success');
+      }).catch(function () { showToast('Gagal memutuskan perangkat.', 'error'); })
         .finally(function () { btn.disabled = false; });
     });
+  }
+
+  // Aksi cepat lain: refresh manual, dan "ganti nama" kosmetik (localStorage
+  // saja, TIDAK dikirim ke server - lihat catatan di field-hint UI).
+  function setupDeviceActions() {
+    document.getElementById('qa-refresh-status').addEventListener('click', function (e) {
+      var svg = e.currentTarget.querySelector('svg');
+      svg.classList.add('spin');
+      Promise.all([loadDevice(), loadDeviceMiniStats()]).finally(function () {
+        setTimeout(function () { svg.classList.remove('spin'); }, 400);
+        showToast('Status diperbarui.', 'success');
+      });
+    });
+
+    document.getElementById('qa-rename').addEventListener('click', function () {
+      var current = localStorage.getItem(DEVICE_LABEL_KEY) || '';
+      var next = prompt('Nama perangkat (cuma tersimpan di browser ini):', current);
+      if (next === null) return;
+      next = next.trim().slice(0, 60);
+      if (next) localStorage.setItem(DEVICE_LABEL_KEY, next); else localStorage.removeItem(DEVICE_LABEL_KEY);
+      document.getElementById('device-label-input').value = next;
+      refreshHeroCopy(lastKnownConnected ? 'connected' : 'not-connected');
+      showToast('Nama perangkat diperbarui.', 'success');
+    });
+
+    var labelInput = document.getElementById('device-label-input');
+    labelInput.value = localStorage.getItem(DEVICE_LABEL_KEY) || '';
+    labelInput.addEventListener('change', function () {
+      var v = labelInput.value.trim().slice(0, 60);
+      if (v) localStorage.setItem(DEVICE_LABEL_KEY, v); else localStorage.removeItem(DEVICE_LABEL_KEY);
+      refreshHeroCopy(lastKnownConnected ? 'connected' : 'not-connected');
+    });
+  }
+
+  // ---------- Confetti (murni CSS/JS, tanpa library) ----------
+  function burstConfetti() {
+    var colors = ['#16A34A', '#22C55E', '#F59E0B', '#0EA5E9', '#EF4444'];
+    for (var i = 0; i < 28; i++) {
+      var el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.left = (35 + Math.random() * 30) + 'vw';
+      el.style.background = colors[i % colors.length];
+      el.style.animationDuration = (1.3 + Math.random() * 0.9) + 's';
+      el.style.animationDelay = (Math.random() * 0.25) + 's';
+      document.body.appendChild(el);
+      (function (node) { setTimeout(function () { node.remove(); }, 3000); })(el);
+    }
   }
 
   // ---------- Modal kirim / broadcast ----------

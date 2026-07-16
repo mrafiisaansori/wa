@@ -226,83 +226,206 @@
 
       <!-- ===== Perangkat ===== -->
       <section id="section-perangkat" class="content-section hidden">
-        <div class="card panel">
-          <h2>Status Perangkat</h2>
-          <p class="panel-sub">Nomor WhatsApp yang tertaut ke akun kamu.</p>
-          <span class="status-pill" id="device-status"><span class="led"></span> Memeriksa...</span>
-          <ul class="info-list" style="margin-top:16px;">
-            <li><span><b style="color:var(--text)">Nomor</b>: <span id="device-nomor">-</span></span></li>
-            <li><span><b style="color:var(--text)">Nama profil WA</b>: <span id="device-nama-wa">-</span></span></li>
-            <li><span><b style="color:var(--text)">Platform HP</b>: <span id="device-platform">-</span></span></li>
-            <li><span><b style="color:var(--text)">Nama perangkat di HP</b>: <span id="device-nama-perangkat">-</span></span></li>
-            <li><span><b style="color:var(--text)">Terhubung sejak</b>: <span id="device-terhubung-sejak">-</span></span></li>
-            <li><span><b style="color:var(--text)">Antrian kirim</b>: <span id="device-antrian">-</span></span></li>
-            <li><span><b style="color:var(--text)">Percobaan reconnect</b>: <span id="device-reconnect">-</span></span></li>
-          </ul>
+
+        <!-- Hero: connect / empty state - selalu ada, jadi satu-satunya "empty state"
+             yang dibutuhkan (bukan tabel kosong terpisah) -->
+        <div class="card device-hero">
+          <div class="device-hero-copy">
+            <h2 id="device-hero-title">Hubungkan Perangkat WhatsApp</h2>
+            <p class="panel-sub">Hubungkan nomor WhatsApp Anda untuk mulai mengirim pesan, broadcast, dan riwayat pengiriman.</p>
+            <div class="field-float">
+              <input id="device-label-input" type="text" placeholder=" " maxlength="60" />
+              <label for="device-label-input">Nama Perangkat (opsional)</label>
+            </div>
+            <p class="field-hint">Cuma label buat kamu sendiri, disimpan di browser ini - bukan dikirim ke WhatsApp.</p>
+            <button class="btn btn-primary btn-lg btn-block" id="device-hero-connect-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="21" y2="21"/><line x1="21" y1="14" x2="14" y2="21"/></svg>
+              <span id="device-hero-connect-label">Hubungkan Perangkat</span>
+            </button>
+          </div>
+          <div class="device-illustration">
+            <div class="illus-node"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="10.5" y1="18" x2="13.5" y2="18"/></svg></div>
+            <div class="illus-line" id="illus-line-1"></div>
+            <div class="illus-node illus-cloud"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a5.5 5.5 0 1 1 1.5-10.8A6 6 0 0 1 22 12a4 4 0 0 1-4.5 7z"/></svg></div>
+            <div class="illus-line" id="illus-line-2"></div>
+            <div class="phone-mock-wrap">
+              <div class="phone-mock" id="phone-mock" data-state="not-connected">
+                <div class="phone-mock-body">
+                  <div class="phone-mock-notch"></div>
+                  <div class="phone-mock-screen">
+                    <svg class="phone-mock-icon icon-qr" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="21" y2="21"/><line x1="21" y1="14" x2="14" y2="21"/></svg>
+                    <svg class="phone-mock-icon icon-wa" width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.5 1.3 5L2 22l5.2-1.3c1.4.8 3.1 1.3 4.8 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2zm0 18c-1.5 0-3-.4-4.2-1.1l-.3-.2-3.1.8.8-3-.2-.3C4.4 15 4 13.5 4 12c0-4.4 3.6-8 8-8s8 3.6 8 8-3.6 8-8 8z"/></svg>
+                    <svg class="phone-mock-icon icon-spinner" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9"/></svg>
+                    <svg class="phone-mock-icon icon-warn" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </div>
+                </div>
+                <div class="phone-mock-badge" id="phone-mock-badge">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+              </div>
+              <span class="status-pill" id="device-status"><span class="led"></span> Memeriksa...</span>
+            </div>
+          </div>
         </div>
 
-        <div class="card panel" id="panel-riwayat-koneksi">
+        <!-- Mini stats -->
+        <div class="mini-stat-grid">
+          <div class="card mini-stat-card">
+            <span class="mini-stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+            <span><span class="value" id="mini-stat-status">-</span><br /><span class="label">Status</span></span>
+          </div>
+          <div class="card mini-stat-card">
+            <span class="mini-stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><span class="value" id="mini-stat-sent-today">-</span><br /><span class="label">Terkirim Hari Ini</span></span>
+          </div>
+          <div class="card mini-stat-card">
+            <span class="mini-stat-icon" style="background:var(--danger-soft); color:var(--danger);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+            <span><span class="value" id="mini-stat-failed-today">-</span><br /><span class="label">Gagal Hari Ini</span></span>
+          </div>
+          <div class="card mini-stat-card">
+            <span class="mini-stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span>
+            <span><span class="value" id="mini-stat-queue">-</span><br /><span class="label">Antrian</span></span>
+          </div>
+        </div>
+
+        <!-- Status card lengkap -->
+        <div class="card panel" id="device-status-card">
+          <div class="device-status-head">
+            <div>
+              <h2>Status Perangkat</h2>
+              <p class="panel-sub" style="margin:0;">Info koneksi WhatsApp akun kamu.</p>
+            </div>
+          </div>
+          <div class="device-info-grid">
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.81.35 1.6.68 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.25a2 2 0 0 1 2.11-.45c.74.33 1.53.56 2.34.68A2 2 0 0 1 22 16.92z"/></svg></span>
+              <span><span class="label">Nomor</span><span class="value" id="device-nomor">-</span></span>
+            </div>
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+              <span><span class="label">Nama Profil WA</span><span class="value" id="device-nama-wa">-</span></span>
+            </div>
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+              <span><span class="label">Platform HP</span><span class="value" id="device-platform">-</span></span>
+            </div>
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span>
+              <span><span class="label">Terhubung Sejak</span><span class="value" id="device-terhubung-sejak">-</span></span>
+            </div>
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+              <span><span class="label">Nama Perangkat di HP</span><span class="value" id="device-nama-perangkat">-</span></span>
+            </div>
+            <div class="device-info-item">
+              <span class="device-info-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></span>
+              <span><span class="label">Percobaan Reconnect</span><span class="value" id="device-reconnect">-</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="card panel">
+          <h2>Aksi Cepat</h2>
+          <p class="panel-sub">Kelola koneksi device kamu.</p>
+          <div class="device-action-row">
+            <button class="device-action-btn" id="qa-refresh-status">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Refresh Status
+            </button>
+            <button class="device-action-btn" id="qa-open-pairing">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="21" y2="21"/><line x1="21" y1="14" x2="14" y2="21"/></svg>
+              Tautkan / QR
+            </button>
+            <button class="device-action-btn" id="qa-rename">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+              Ganti Nama
+            </button>
+            <button class="device-action-btn is-danger" id="qa-unlink">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              Putuskan Perangkat
+            </button>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="card panel">
           <h2>Riwayat Koneksi</h2>
           <p class="panel-sub">5 event koneksi WA terakhir milik akun kamu.</p>
-          <ul class="activity-list" id="device-log-list">
+          <ul class="device-timeline" id="device-log-list">
             <li class="empty-state">Memuat...</li>
           </ul>
         </div>
-
-        <div class="card panel" id="panel-pairing">
-          <h2>Tautkan Nomor WhatsApp</h2>
-          <p class="panel-sub">Pilih salah satu cara - keduanya menautkan device yang sama, tinggal pilih yang paling gampang buat kamu.</p>
-
-          <div class="segmented" id="pairing-mode-toggle">
-            <button type="button" class="active" data-pairing-mode="code">Kode Pairing</button>
-            <button type="button" data-pairing-mode="qr">Scan QR</button>
-          </div>
-
-          <div id="pairing-mode-code">
-            <ul class="info-list" style="margin-bottom:20px;">
-              <li><span class="step-num">1</span><span>Di HP yang mau ditautkan, buka WhatsApp &rarr; <b style="color:var(--text)">Setelan</b> &rarr; <b style="color:var(--text)">Perangkat Tertaut</b> &rarr; <b style="color:var(--text)">Tautkan Perangkat</b> &rarr; pilih <b style="color:var(--text)">"Tautkan dengan nomor telepon"</b>, lalu berhenti di layar yang minta kode - JANGAN tutup dulu.</span></li>
-              <li><span class="step-num">2</span><span>Balik ke sini, isi nomor WA yang sama di form bawah (format <code>62812xxxxxxx</code>, tanpa + atau spasi), lalu klik <b style="color:var(--text)">Minta Kode Pairing</b>.</span></li>
-              <li><span class="step-num">3</span><span>Kode 8 digit langsung muncul di sini - buruan ketik ke layar HP tadi sebelum 60 detik habis. Kalau kelamaan, ulangi dari langkah 2 buat minta kode baru.</span></li>
-              <li><span class="step-num">4</span><span>Kalau berhasil, status di panel "Status Perangkat" di atas berubah jadi <b style="color:var(--success)">Perangkat terhubung</b> dalam beberapa detik.</span></li>
-            </ul>
-            <div id="pairing-alert" class="alert"></div>
-            <form id="pairing-form">
-              <div class="field-float">
-                <input id="pairing-nomor" type="text" placeholder=" " required />
-                <label for="pairing-nomor">Nomor WhatsApp</label>
-              </div>
-              <button type="submit" class="btn btn-primary btn-block" id="pairing-submit">Minta Kode Pairing</button>
-            </form>
-            <div id="pairing-code-wrap" class="hidden" style="margin-top:16px; text-align:center;">
-              <div style="font-size:32px; font-weight:800; letter-spacing:0.1em;" id="pairing-code"></div>
-              <p class="field-hint" style="margin:6px 0 0;">Ketik kode ini di HP dalam ~60 detik.</p>
-            </div>
-          </div>
-
-          <div id="pairing-mode-qr" class="hidden">
-            <ul class="info-list" style="margin-bottom:20px;">
-              <li><span class="step-num">1</span><span>Di HP yang mau ditautkan, buka WhatsApp &rarr; <b style="color:var(--text)">Setelan</b> &rarr; <b style="color:var(--text)">Perangkat Tertaut</b> &rarr; <b style="color:var(--text)">Tautkan Perangkat</b>.</span></li>
-              <li><span class="step-num">2</span><span>Arahkan kamera HP ke kode QR di bawah ini, sama seperti tautkan WhatsApp Web.</span></li>
-              <li><span class="step-num">3</span><span>QR otomatis diperbarui tiap ±20 detik selama belum di-scan - tidak perlu refresh manual.</span></li>
-            </ul>
-            <div id="qr-alert" class="alert"></div>
-            <div style="text-align:center;">
-              <div style="display:inline-block; padding:14px; background:#fff; border-radius:var(--radius-lg); border:1px solid var(--border); min-height:248px; min-width:248px; display:inline-flex; align-items:center; justify-content:center;">
-                <img id="qr-image" width="220" height="220" alt="QR pairing WhatsApp" class="hidden" />
-                <span id="qr-loading" class="skeleton-bar" style="width:220px; height:220px; border-radius:var(--radius-md);"></span>
-              </div>
-              <p class="field-hint" style="margin-top:10px;" id="qr-status-text">Memuat QR...</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="card panel">
-          <h2>Putuskan Perangkat</h2>
-          <p class="panel-sub">Melepas nomor WA dari gateway - perlu pairing ulang setelah ini.</p>
-          <button class="btn btn-secondary" id="unlink-btn">Putuskan Perangkat</button>
-        </div>
       </section>
 
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal Tautkan Perangkat (QR / Kode Pairing) ===== -->
+<div id="modal-pairing" class="modal-overlay hidden">
+  <div class="card modal-card modal-card-lg">
+    <button class="modal-close" id="close-pairing-modal" aria-label="Tutup">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h2 style="margin-bottom:4px;">Hubungkan Perangkat WhatsApp</h2>
+    <p class="text-muted" style="font-size:13px;margin-bottom:16px;">Pilih salah satu cara - keduanya menautkan device yang sama.</p>
+
+    <div class="segmented" id="pairing-mode-toggle">
+      <button type="button" class="active" data-pairing-mode="qr">Scan QR</button>
+      <button type="button" data-pairing-mode="code">Kode Pairing</button>
+    </div>
+
+    <div class="pairing-modal-body">
+      <div>
+        <!-- Mode QR -->
+        <div id="pairing-mode-qr">
+          <div class="pairing-qr-box">
+            <div class="pairing-qr-frame">
+              <img id="qr-image" width="200" height="200" alt="QR pairing WhatsApp" class="hidden" />
+              <span id="qr-loading" class="skeleton-bar" style="width:180px; height:180px; border-radius:var(--radius-md);"></span>
+            </div>
+            <div class="pairing-countdown"><div class="pairing-countdown-bar" id="qr-countdown-bar"></div></div>
+            <p class="field-hint" id="qr-status-text" style="margin:0;">Memuat QR...</p>
+          </div>
+          <div id="qr-alert" class="alert" style="margin-top:12px;"></div>
+        </div>
+
+        <!-- Mode kode pairing -->
+        <div id="pairing-mode-code" class="hidden">
+          <form id="pairing-form">
+            <div class="field-float">
+              <input id="pairing-nomor" type="text" placeholder=" " required />
+              <label for="pairing-nomor">Nomor WhatsApp</label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="pairing-submit">Minta Kode Pairing</button>
+          </form>
+          <div id="pairing-code-wrap" class="hidden" style="margin-top:14px; text-align:center;">
+            <div style="font-size:30px; font-weight:800; letter-spacing:0.1em;" id="pairing-code"></div>
+            <div class="pairing-countdown" style="margin-top:10px;"><div class="pairing-countdown-bar" id="code-countdown-bar"></div></div>
+          </div>
+          <div id="pairing-alert" class="alert" style="margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <div>
+        <ol class="pairing-steps" id="pairing-steps-qr">
+          <li><span class="step-num">1</span><span>Buka WhatsApp di HP yang mau ditautkan.</span></li>
+          <li><span class="step-num">2</span><span>Ketuk <b style="color:var(--text)">Setelan</b> &rarr; <b style="color:var(--text)">Perangkat Tertaut</b> &rarr; <b style="color:var(--text)">Tautkan Perangkat</b>.</span></li>
+          <li><span class="step-num">3</span><span>Arahkan kamera HP ke kode QR di sebelah kiri.</span></li>
+          <li><span class="step-num">4</span><span>Selesai - status berubah otomatis begitu HP berhasil scan.</span></li>
+        </ol>
+        <ol class="pairing-steps hidden" id="pairing-steps-code">
+          <li><span class="step-num">1</span><span>Buka WhatsApp &rarr; <b style="color:var(--text)">Setelan</b> &rarr; <b style="color:var(--text)">Perangkat Tertaut</b> &rarr; <b style="color:var(--text)">Tautkan Perangkat</b> &rarr; pilih <b style="color:var(--text)">"Tautkan dengan nomor telepon"</b>, lalu berhenti di layar yang minta kode.</span></li>
+          <li><span class="step-num">2</span><span>Isi nomor WA di sebelah kiri, klik <b style="color:var(--text)">Minta Kode Pairing</b>.</span></li>
+          <li><span class="step-num">3</span><span>Ketik kode 8 digit itu ke layar HP tadi sebelum 60 detik habis.</span></li>
+          <li><span class="step-num">4</span><span>Selesai - status berubah otomatis begitu berhasil.</span></li>
+        </ol>
+        <div class="pairing-live-status is-waiting" id="pairing-live-status">
+          <span class="pairing-live-dot"></span>
+          <span id="pairing-live-text">Menunggu HP kamu scan/masukkan kode...</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
