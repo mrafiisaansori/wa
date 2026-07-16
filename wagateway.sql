@@ -40,10 +40,15 @@ CREATE TABLE IF NOT EXISTS `riwayat_pesan` (
 
 -- Log ringkas naik-turunnya koneksi WA (buat troubleshooting stabilitas
 -- koneksi tanpa harus gali pm2 logs terus).
+-- aplikasi_id NULL diperbolehkan untuk event yang terjadi sebelum tenant
+-- diketahui (mis. gagal boot socket saat startup awal).
 CREATE TABLE IF NOT EXISTS `koneksi_log` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `aplikasi_id` INT UNSIGNED NULL,
   `event` VARCHAR(30) NOT NULL,
   `detail` VARCHAR(255) NULL,
   `dicatat_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY `idx_event` (`event`)
+  KEY `idx_event` (`event`),
+  KEY `idx_koneksi_aplikasi` (`aplikasi_id`),
+  CONSTRAINT `fk_koneksi_aplikasi` FOREIGN KEY (`aplikasi_id`) REFERENCES `aplikasi` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

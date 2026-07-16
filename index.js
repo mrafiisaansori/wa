@@ -1,7 +1,9 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
+const session = require('express-session');
 const pino = require('pino');
 const bcrypt = require('bcryptjs');
 const swaggerUi = require('swagger-ui-express');
@@ -16,22 +18,52 @@ const {
 const db = require('./db');
 const swaggerAdmin = require('./swagger-admin');
 const swaggerApp = require('./swagger-app');
+const { jitterDelay, sisaKuotaBroadcast } = require('./broadcast-utils');
 
 const PORT = process.env.PORT || 3900;
 const DOCS_USER = process.env.DOCS_USER;
 const DOCS_PASS = process.env.DOCS_PASS;
 const APP_DOCS_USER = process.env.APP_DOCS_USER;
 const APP_DOCS_PASS = process.env.APP_DOCS_PASS;
-const PAIR_NUMBER = process.env.PAIR_NUMBER; // nomor WA tujuan pairing, format 628xxxxxxxxxx (tanpa + / spasi)
-// Jeda antar pesan - kunci utama biar tidak kelihatan pola "blasting" ke WhatsApp.
-const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS || 3000);
+// Jeda antar pesan diacak dalam rentang ini - kunci utama biar tidak kelihatan
+// pola "blasting" ke WhatsApp (delay tetap = pola robot yang gampang dikenali).
+const SEND_DELAY_MIN_MS = Number(process.env.SEND_DELAY_MIN_MS || 2500);
+const SEND_DELAY_MAX_MS = Number(process.env.SEND_DELAY_MAX_MS || 6000);
+const BROADCAST_DAILY_LIMIT = Number(process.env.BROADCAST_DAILY_LIMIT || 200);
+const BROADCAST_MAX_PER_CALL = 500;
+
+// ponytail: kalau SESSION_SECRET tidak diisi, generate acak tiap boot supaya
+// server tetap jalan (bukan crash) - konsekuensinya semua sesi login putus
+// tiap restart. Isi SESSION_SECRET di .env untuk sesi yang bertahan lintas restart.
+const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
+  console.warn('[wagateway] SESSION_SECRET kosong di .env - pakai secret acak sementara (sesi login putus tiap restart).');
+  return crypto.randomBytes(32).toString('hex');
+})();
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 
-let sock;
-let authState; // ref ke state.creds - dipakai /pairing-code buat cek sudah registered atau belum
-let isReady = false;
-let reconnectAttempts = 0;
+// ===== Tenant registry: 1 aplikasi = 1 koneksi WA sendiri =====
+// ponytail: Map in-memory dalam 1 proses, cukup untuk skala puluhan tenant.
+// Kalau nanti perlu proses/worker terpisah per tenant (skala ratusan), pisah ke situ.
+const tenants = new Map(); // aplikasi_id -> tenant state
+
+function newTenantState() {
+  return { sock: null, authState: null, isReady: false, reconnectAttempts: 0, queue: [], processing: false };
+}
+
+function getTenant(aplikasiId) {
+  let tenant = tenants.get(aplikasiId);
+  if (!tenant) {
+    tenant = newTenantState();
+    tenants.set(aplikasiId, tenant);
+  }
+  return tenant;
+}
+
+function authFolder(aplikasiId) {
+  return path.join(__dirname, 'auth', String(aplikasiId));
+}
+
 // Exponential backoff, TIDAK PERNAH menyerah total - cuma jarak antar percobaan
 // makin lama kalau terus gagal (cegah reconnect storm), sampai maksimal 5 menit.
 const BASE_RECONNECT_DELAY_MS = 5000;
@@ -41,39 +73,34 @@ function nextReconnectDelay(attempt) {
   return Math.min(delay, MAX_RECONNECT_DELAY_MS);
 }
 
-async function logKoneksi(event, detail) {
+async function logKoneksi(aplikasiId, event, detail) {
   try {
-    await db.query('INSERT INTO koneksi_log (event, detail) VALUES (?, ?)', [event, detail || null]);
+    await db.query('INSERT INTO koneksi_log (aplikasi_id, event, detail) VALUES (?, ?, ?)', [aplikasiId, event, detail || null]);
   } catch (err) {
     console.error('[wagateway] gagal catat koneksi_log:', err.message);
   }
 }
 
-// ponytail: antrian in-memory, cukup untuk 1 proses/1 nomor. Kalau nanti perlu
-// multi-nomor atau proses paralel, ganti ke queue eksternal (BullMQ + Redis).
-const queue = [];
-let processing = false;
-
-function enqueueSend(jid, message) {
+function enqueueSend(tenant, jid, message) {
   return new Promise((resolve, reject) => {
-    queue.push({ jid, message, resolve, reject });
-    processQueue();
+    tenant.queue.push({ jid, message, resolve, reject });
+    processQueue(tenant);
   });
 }
 
-async function processQueue() {
-  if (processing || queue.length === 0) return;
-  processing = true;
-  const { jid, message, resolve, reject } = queue.shift();
+async function processQueue(tenant) {
+  if (tenant.processing || tenant.queue.length === 0) return;
+  tenant.processing = true;
+  const { jid, message, resolve, reject } = tenant.queue.shift();
   try {
-    if (!isReady) throw new Error('WA belum terhubung');
-    const result = await sock.sendMessage(jid, { text: message });
+    if (!tenant.isReady) throw new Error('WA belum terhubung');
+    const result = await tenant.sock.sendMessage(jid, { text: message });
     resolve(result);
   } catch (err) {
     reject(err);
   } finally {
-    processing = false;
-    if (queue.length > 0) setTimeout(processQueue, SEND_DELAY_MS);
+    tenant.processing = false;
+    if (tenant.queue.length > 0) setTimeout(() => processQueue(tenant), jitterDelay(SEND_DELAY_MIN_MS, SEND_DELAY_MAX_MS));
   }
 }
 
@@ -86,16 +113,18 @@ function mapWAStatus(code) {
   return null;
 }
 
-async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
-  authState = state;
+async function startSock(aplikasiId) {
+  const tenant = getTenant(aplikasiId);
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder(aplikasiId));
+  tenant.authState = state;
 
-  sock = makeWASocket({
+  const sock = makeWASocket({
     auth: state,
     logger,
     browser: Browsers.ubuntu('Chrome'),
     printQRInTerminal: false,
   });
+  tenant.sock = sock;
 
   sock.ev.on('creds.update', saveCreds);
 
@@ -120,110 +149,205 @@ async function startSock() {
     const { connection, lastDisconnect } = update;
 
     if (connection === 'open') {
-      isReady = true;
-      reconnectAttempts = 0;
-      console.log('[wagateway] terhubung ke WhatsApp.');
-      logKoneksi('connected');
+      tenant.isReady = true;
+      tenant.reconnectAttempts = 0;
+      console.log(`[wagateway] aplikasi #${aplikasiId} terhubung ke WhatsApp.`);
+      logKoneksi(aplikasiId, 'connected');
     }
 
     if (connection === 'close') {
-      isReady = false;
+      tenant.isReady = false;
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
-      console.log('[wagateway] koneksi terputus.', { statusCode, loggedOut });
+      console.log(`[wagateway] aplikasi #${aplikasiId} koneksi terputus.`, { statusCode, loggedOut });
 
       if (loggedOut) {
         // Sesi ditolak WhatsApp (mis. di-unlink dari HP, atau kena force-logout).
-        // Bersihkan sesi lama otomatis biar /pairing-code langsung bisa dipakai
-        // lagi tanpa perlu restart manual.
-        console.log('[wagateway] sesi logout - membersihkan sesi lama, siap pairing ulang.');
-        logKoneksi('logged_out', `statusCode ${statusCode}`);
-        fs.rmSync('./auth', { recursive: true, force: true });
-        reconnectAttempts = 0;
-        startSock();
+        // Bersihkan sesi lama otomatis biar /device/pairing-code langsung bisa
+        // dipakai lagi tanpa perlu restart manual.
+        console.log(`[wagateway] aplikasi #${aplikasiId} sesi logout - membersihkan sesi lama, siap pairing ulang.`);
+        logKoneksi(aplikasiId, 'logged_out', `statusCode ${statusCode}`);
+        fs.rmSync(authFolder(aplikasiId), { recursive: true, force: true });
+        tenant.reconnectAttempts = 0;
+        startSock(aplikasiId);
         return;
       }
 
-      logKoneksi('disconnected', `statusCode ${statusCode}`);
-      reconnectAttempts += 1;
-      const delay = nextReconnectDelay(reconnectAttempts);
-      if (reconnectAttempts > 5) {
-        console.warn(`[wagateway] sudah gagal reconnect ${reconnectAttempts}x berturut-turut (statusCode terakhir: ${statusCode}) - tetap dicoba terus, jarak makin lama.`);
+      logKoneksi(aplikasiId, 'disconnected', `statusCode ${statusCode}`);
+      tenant.reconnectAttempts += 1;
+      const delay = nextReconnectDelay(tenant.reconnectAttempts);
+      if (tenant.reconnectAttempts > 5) {
+        console.warn(`[wagateway] aplikasi #${aplikasiId} sudah gagal reconnect ${tenant.reconnectAttempts}x berturut-turut (statusCode terakhir: ${statusCode}) - tetap dicoba terus, jarak makin lama.`);
       }
-      console.log(`[wagateway] reconnect percobaan ke-${reconnectAttempts} dalam ${Math.round(delay / 1000)} detik...`);
-      setTimeout(startSock, delay);
+      console.log(`[wagateway] aplikasi #${aplikasiId} reconnect percobaan ke-${tenant.reconnectAttempts} dalam ${Math.round(delay / 1000)} detik...`);
+      setTimeout(() => startSock(aplikasiId), delay);
     }
   });
 
   if (!state.creds.registered) {
     // Sengaja TIDAK auto-request kode pairing di sini. Kode WhatsApp cuma valid
     // sekitar 60 detik - kalau di-generate otomatis pas proses baru start, sering
-    // keburu basi sebelum sempat dibaca dari pm2 logs. Minta kode lewat
-    // GET /pairing-code (lewat Swagger /docs/admin) tepat pas HP sudah siap ketik.
-    console.log('[wagateway] belum tertaut ke WhatsApp. Buka HP ke layar "Tautkan dengan nomor telepon", lalu panggil GET /pairing-code buat dapat kode barunya.');
+    // keburu basi sebelum sempat dibaca. Minta kode lewat POST /device/pairing-code
+    // tepat pas HP sudah siap ketik.
+    console.log(`[wagateway] aplikasi #${aplikasiId} belum tertaut ke WhatsApp. Minta kode lewat POST /device/pairing-code.`);
   }
 }
 
-startSock();
+async function startAllTenants() {
+  const [rows] = await db.query('SELECT id FROM aplikasi WHERE aktif = 1');
+  for (const row of rows) {
+    startSock(row.id).catch((err) => console.error(`[wagateway] gagal start socket aplikasi #${row.id}:`, err.message));
+  }
+}
+
+startAllTenants().catch((err) => console.error('[wagateway] gagal load daftar aplikasi saat startup:', err.message));
 
 const app = express();
 app.use(express.json());
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' },
+}));
 // UI web statis (login + kirim pesan + riwayat) - murni HTML/CSS/JS, tanpa
 // build step. Ditaruh sebelum route API biar / kepegang file public/index.html.
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== Auth admin (operator wagateway) - kredensial tunggal dari .env =====
+// ===== Auth admin (operator wagateway) - kredensial tunggal dari .env, buat
+// provisioning tenant baru. Ini BUKAN akun tenant. =====
 const requireDocsAuth = DOCS_PASS
   ? basicAuth({ users: { [DOCS_USER || 'admin']: DOCS_PASS }, challenge: true })
   : (req, res) => res.status(503).json({ error: 'Admin auth belum dikonfigurasi (DOCS_PASS kosong di .env)' });
 
-// ===== Auth khusus buka halaman /docs/app - beda dari admin, tapi ini cuma
-// gerbang buat LIHAT dokumentasinya. Eksekusi /send & /history di dalamnya
-// tetap minta login aplikasi (requireAppAuth) terpisah lagi. =====
-const requireAppDocsAuth = APP_DOCS_PASS
-  ? basicAuth({ users: { [APP_DOCS_USER || 'app']: APP_DOCS_PASS }, challenge: true })
-  : (req, res) => res.status(503).json({ error: 'App docs auth belum dikonfigurasi (APP_DOCS_PASS kosong di .env)' });
+// ===== Auth aplikasi (tenant) - dua cara masuk yang keduanya cek ke tabel
+// `aplikasi` yang sama: sesi cookie (dashboard browser, dari POST /login) atau
+// Basic Auth (project pemanggil kayak Zona Kasir, tidak berubah dari sebelumnya). =====
+async function loadAplikasi(username, password) {
+  const [rows] = await db.query(
+    'SELECT id, nama, password_hash, aktif FROM aplikasi WHERE username = ? LIMIT 1',
+    [username]
+  );
+  const row = rows[0];
+  const valid = row && row.aktif && (await bcrypt.compare(password || '', row.password_hash));
+  return valid ? { id: row.id, nama: row.nama } : null;
+}
 
-// ===== Auth aplikasi (project pemanggil) - dinamis dari tabel `aplikasi` =====
-// Ditulis manual (bukan express-basic-auth) karena butuh nempelin data aplikasi
-// yang login (req.aplikasi) buat scoping /history, bukan cuma true/false.
+// Dipakai admin (POST /admin/aplikasi) MAUPUN pendaftaran mandiri (POST
+// /register) - satu jalur pembuatan tenant, supaya socket-nya selalu ikut
+// disiapkan (startSock) di manapun tenant itu dibuat.
+async function createAplikasi(username, password, nama) {
+  const hash = await bcrypt.hash(password, 10);
+  const [result] = await db.query(
+    'INSERT INTO aplikasi (username, password_hash, nama) VALUES (?, ?, ?)',
+    [username, hash, nama]
+  );
+  startSock(result.insertId).catch((err) => console.error(`[wagateway] gagal start socket aplikasi #${result.insertId}:`, err.message));
+  return result.insertId;
+}
+
 async function requireAppAuth(req, res, next) {
+  if (req.session?.aplikasiId) {
+    try {
+      const [rows] = await db.query('SELECT id, nama, aktif FROM aplikasi WHERE id = ? LIMIT 1', [req.session.aplikasiId]);
+      const row = rows[0];
+      if (!row || !row.aktif) {
+        return req.session.destroy(() => res.status(401).json({ error: 'Sesi tidak valid, silakan login lagi' }));
+      }
+      req.aplikasi = { id: row.id, nama: row.nama };
+      return next();
+    } catch (err) {
+      return res.status(500).json({ error: 'Gagal cek sesi: ' + err.message });
+    }
+  }
+
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
   if (scheme !== 'Basic' || !encoded) {
     res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
-    return res.status(401).json({ error: 'Login aplikasi diperlukan (Basic Auth username/password)' });
+    return res.status(401).json({ error: 'Login aplikasi diperlukan (Basic Auth username/password, atau login sesi)' });
   }
   const [username, password] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
   try {
-    const [rows] = await db.query(
-      'SELECT id, nama, password_hash, aktif FROM aplikasi WHERE username = ? LIMIT 1',
-      [username]
-    );
-    const row = rows[0];
-    const valid = row && row.aktif && (await bcrypt.compare(password || '', row.password_hash));
-    if (!valid) {
+    const aplikasi = await loadAplikasi(username, password);
+    if (!aplikasi) {
       res.set('WWW-Authenticate', 'Basic realm="wagateway-app"');
       return res.status(401).json({ error: 'Username/password aplikasi salah, atau aplikasi nonaktif' });
     }
-    req.aplikasi = { id: row.id, nama: row.nama };
+    req.aplikasi = aplikasi;
     next();
   } catch (err) {
     res.status(500).json({ error: 'Gagal cek login aplikasi: ' + err.message });
   }
 }
 
+// ===== Auth khusus buka halaman /docs/app - terima sesi tenant (dashboard
+// yang sudah login) ATAU kredensial APP_DOCS_USER/PASS terpisah (buat lihat
+// dokumentasi tanpa perlu login tenant). Eksekusi endpoint di dalam Swagger
+// tetap minta login aplikasi lagi (requireAppAuth). =====
+function requireAppDocsAuth(req, res, next) {
+  if (req.session?.aplikasiId) return next();
+  if (!APP_DOCS_PASS) {
+    return res.status(503).json({ error: 'App docs auth belum dikonfigurasi (APP_DOCS_PASS kosong di .env)' });
+  }
+  return basicAuth({ users: { [APP_DOCS_USER || 'app']: APP_DOCS_PASS }, challenge: true })(req, res, next);
+}
+
 app.get('/status', (req, res) => {
-  res.json({ connected: isReady, antrian: queue.length });
+  // Liveness publik ringan (server up) - status koneksi WA per tenant yang
+  // sebenarnya ada di GET /device (butuh login), bukan di sini.
+  res.json({ ok: true, tenant_aktif: tenants.size });
 });
 
-// ===== Endpoint aplikasi (butuh login /aplikasi) =====
+// ===== Login / logout dashboard (sesi cookie, beda dari Basic Auth API) =====
+
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'username dan password wajib diisi' });
+  try {
+    const aplikasi = await loadAplikasi(username, password);
+    if (!aplikasi) return res.status(401).json({ error: 'Username/password salah, atau aplikasi nonaktif' });
+    req.session.aplikasiId = aplikasi.id;
+    res.json({ success: true, nama: aplikasi.nama });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal login: ' + err.message });
+  }
+});
+
+app.post('/logout', (req, res) => {
+  req.session.destroy(() => res.json({ success: true }));
+});
+
+// Pendaftaran tenant mandiri (publik, tanpa admin) - langsung login (sesi)
+// setelah sukses supaya bisa lanjut tautkan device tanpa login ulang.
+app.post('/register', async (req, res) => {
+  const { username, password, nama } = req.body || {};
+  if (!username || !password || !nama) {
+    return res.status(400).json({ error: 'nama, username, dan password wajib diisi' });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: 'Password minimal 6 karakter' });
+  }
+  try {
+    const id = await createAplikasi(username, password, nama);
+    req.session.aplikasiId = id;
+    res.status(201).json({ success: true, id, nama });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'Username sudah dipakai' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== Endpoint aplikasi (butuh login /aplikasi - sesi atau Basic) =====
 
 app.post('/send', requireAppAuth, async (req, res) => {
   const { nomor, pesan } = req.body || {};
   if (!nomor || !pesan) {
     return res.status(400).json({ error: 'nomor dan pesan wajib diisi' });
   }
+  const tenant = getTenant(req.aplikasi.id);
   const jid = `${String(nomor).replace(/\D/g, '')}@s.whatsapp.net`;
 
   const [insertResult] = await db.query(
@@ -233,7 +357,7 @@ app.post('/send', requireAppAuth, async (req, res) => {
   const riwayatId = insertResult.insertId;
 
   try {
-    const result = await enqueueSend(jid, pesan);
+    const result = await enqueueSend(tenant, jid, pesan);
     await db.query(
       'UPDATE riwayat_pesan SET status = "terkirim", wa_message_id = ?, dikirim_at = NOW() WHERE id = ?',
       [result?.key?.id || null, riwayatId]
@@ -268,25 +392,110 @@ app.get('/stats', requireAppAuth, async (req, res) => {
   res.json(stats);
 });
 
-// ===== Endpoint admin (butuh login admin) =====
+// ===== Broadcast - kirim ke banyak nomor sekaligus. TIDAK ada jalur kirim
+// terpisah: tiap nomor lewat enqueueSend/processQueue yang sama seperti
+// /send, jadi tetap kena jeda acak (jitterDelay) yang sama. Kalau jumlah
+// nomor melebihi sisa kuota harian, SELURUH batch ditolak (bukan sebagian)
+// supaya perilakunya jelas buat caller - bukan garansi anti-block, cuma
+// mengurangi pola pengiriman yang gampang dikenali WhatsApp sebagai spam. =====
+app.post('/broadcast', requireAppAuth, async (req, res) => {
+  const { pesan, nomor_list: nomorList } = req.body || {};
+  if (!pesan || !Array.isArray(nomorList) || nomorList.length === 0) {
+    return res.status(400).json({ error: 'pesan dan nomor_list (array, minimal 1) wajib diisi' });
+  }
+  if (nomorList.length > BROADCAST_MAX_PER_CALL) {
+    return res.status(400).json({ error: `Maksimal ${BROADCAST_MAX_PER_CALL} nomor per panggilan` });
+  }
 
-app.get('/pairing-code', requireDocsAuth, async (req, res) => {
-  if (!sock) return res.status(503).json({ error: 'Socket belum siap, coba beberapa detik lagi' });
-  if (authState?.creds?.registered) {
+  const tenant = getTenant(req.aplikasi.id);
+  const [hariIniRows] = await db.query(
+    'SELECT COUNT(*) AS jumlah FROM riwayat_pesan WHERE aplikasi_id = ? AND dibuat_at > CURDATE()',
+    [req.aplikasi.id]
+  );
+  const sisaKuota = sisaKuotaBroadcast(BROADCAST_DAILY_LIMIT, hariIniRows[0].jumlah);
+  if (nomorList.length > sisaKuota) {
+    return res.status(400).json({
+      error: `Kuota broadcast harian tersisa ${Math.max(sisaKuota, 0)}, diminta ${nomorList.length}`,
+    });
+  }
+
+  let diterima = 0;
+  for (const nomor of nomorList) {
+    const jid = `${String(nomor).replace(/\D/g, '')}@s.whatsapp.net`;
+    const [insertResult] = await db.query(
+      'INSERT INTO riwayat_pesan (aplikasi_id, nomor_tujuan, pesan, status) VALUES (?, ?, ?, "antri")',
+      [req.aplikasi.id, nomor, pesan]
+    );
+    const riwayatId = insertResult.insertId;
+    diterima += 1;
+    enqueueSend(tenant, jid, pesan)
+      .then((result) => db.query(
+        'UPDATE riwayat_pesan SET status = "terkirim", wa_message_id = ?, dikirim_at = NOW() WHERE id = ?',
+        [result?.key?.id || null, riwayatId]
+      ))
+      .catch((err) => db.query(
+        'UPDATE riwayat_pesan SET status = "gagal", error_pesan = ? WHERE id = ?',
+        [String(err.message).slice(0, 250), riwayatId]
+      ));
+  }
+  res.json({ success: true, diterima });
+});
+
+// ===== Device - tenant lihat/kelola koneksi WA miliknya sendiri =====
+
+app.get('/device', requireAppAuth, async (req, res) => {
+  const tenant = getTenant(req.aplikasi.id);
+  const [rows] = await db.query(
+    'SELECT event, dicatat_at FROM koneksi_log WHERE aplikasi_id = ? ORDER BY id DESC LIMIT 1',
+    [req.aplikasi.id]
+  );
+  res.json({
+    connected: tenant.isReady,
+    nomor: tenant.sock?.user?.id ? tenant.sock.user.id.split(':')[0] : null,
+    antrian: tenant.queue.length,
+    log_terakhir: rows[0] || null,
+  });
+});
+
+app.post('/device/pairing-code', requireAppAuth, async (req, res) => {
+  const tenant = getTenant(req.aplikasi.id);
+  if (!tenant.sock) return res.status(503).json({ error: 'Socket belum siap, coba beberapa detik lagi' });
+  if (tenant.authState?.creds?.registered) {
     return res.status(400).json({ error: 'Sudah tertaut ke WhatsApp - tidak perlu pairing lagi' });
   }
-  const nomor = req.query.nomor || PAIR_NUMBER;
+  const nomor = (req.body && req.body.nomor) || req.query.nomor;
   if (!nomor) {
-    return res.status(400).json({ error: 'Isi PAIR_NUMBER di .env, atau kirim ?nomor=628xxxxxxxxxx' });
+    return res.status(400).json({ error: 'Isi nomor WA tujuan pairing, format 628xxxxxxxxxx' });
   }
   try {
-    const code = await sock.requestPairingCode(nomor);
-    logKoneksi('pairing_requested', nomor);
+    const code = await tenant.sock.requestPairingCode(nomor);
+    logKoneksi(req.aplikasi.id, 'pairing_requested', String(nomor));
     res.json({ code, catatan: 'Berlaku sekitar 60 detik - langsung masukkan di HP: WhatsApp > Perangkat Tertaut > Tautkan dengan nomor telepon.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post('/device/logout', requireAppAuth, async (req, res) => {
+  const aplikasiId = req.aplikasi.id;
+  const tenant = getTenant(aplikasiId);
+  try {
+    if (tenant.sock && tenant.isReady) {
+      await tenant.sock.logout();
+    }
+  } catch (err) {
+    console.error(`[wagateway] gagal logout socket aplikasi #${aplikasiId}:`, err.message);
+  }
+  fs.rmSync(authFolder(aplikasiId), { recursive: true, force: true });
+  tenant.isReady = false;
+  tenant.reconnectAttempts = 0;
+  logKoneksi(aplikasiId, 'device_unlinked');
+  startSock(aplikasiId).catch((err) => console.error(`[wagateway] gagal restart socket aplikasi #${aplikasiId}:`, err.message));
+  res.json({ success: true });
+});
+
+// ===== Endpoint admin (butuh login admin) - provisioning tenant, bukan
+// pengelolaan koneksi WA (itu sudah pindah ke /device/* per tenant di atas). =====
 
 app.post('/admin/aplikasi', requireDocsAuth, async (req, res) => {
   const { username, password, nama } = req.body || {};
@@ -294,12 +503,8 @@ app.post('/admin/aplikasi', requireDocsAuth, async (req, res) => {
     return res.status(400).json({ error: 'username, password, nama wajib diisi' });
   }
   try {
-    const hash = await bcrypt.hash(password, 10);
-    const [result] = await db.query(
-      'INSERT INTO aplikasi (username, password_hash, nama) VALUES (?, ?, ?)',
-      [username, hash, nama]
-    );
-    res.status(201).json({ id: result.insertId, username, nama });
+    const id = await createAplikasi(username, password, nama);
+    res.status(201).json({ id, username, nama });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Username sudah dipakai' });
@@ -320,20 +525,16 @@ app.get('/admin/koneksi-log', requireDocsAuth, async (req, res) => {
 });
 
 // Dua Swagger UI terpisah, dua kredensial beda buat sekadar MELIHAT halamannya:
-// /docs/admin (pairing, status koneksi, kelola aplikasi) pakai login admin,
-// /docs/app (kirim pesan & riwayat) pakai login app-docs sendiri. Eksekusi
+// /docs/admin (kelola aplikasi) pakai login admin, /docs/app (kirim pesan,
+// device, broadcast) pakai sesi tenant atau login app-docs terpisah. Eksekusi
 // endpoint di /docs/app tetap minta login aplikasi lagi (requireAppAuth),
 // jadi ini murni gerbang "siapa yang boleh lihat dokumentasinya".
 if (DOCS_PASS) {
   app.use('/docs/admin', requireDocsAuth, swaggerUi.serveFiles(swaggerAdmin), swaggerUi.setup(swaggerAdmin));
 } else {
-  console.warn('[wagateway] DOCS_PASS belum diset di .env - /docs/admin, /pairing-code, dan /admin/* dinonaktifkan.');
+  console.warn('[wagateway] DOCS_PASS belum diset di .env - /docs/admin dan /admin/* dinonaktifkan.');
 }
 
-if (APP_DOCS_PASS) {
-  app.use('/docs/app', requireAppDocsAuth, swaggerUi.serveFiles(swaggerApp), swaggerUi.setup(swaggerApp));
-} else {
-  console.warn('[wagateway] APP_DOCS_PASS belum diset di .env - /docs/app dinonaktifkan.');
-}
+app.use('/docs/app', requireAppDocsAuth, swaggerUi.serveFiles(swaggerApp), swaggerUi.setup(swaggerApp));
 
 app.listen(PORT, () => console.log(`[wagateway] API jalan di port ${PORT}`));
