@@ -67,20 +67,20 @@ Lewat `/docs/admin` > `POST /admin/aplikasi`:
 { "username": "zonakasir", "password": "password-kuat-punya-zonakasir", "nama": "Zona Kasir" }
 ```
 
-Kasih username/password ini ke project yang bersangkutan - mereka pakai ini buat login ke `/send` dan `/history` (lewat `/docs/app`, atau langsung dari kode mereka).
+Username/password di atas cuma buat login SESI DASHBOARD (`/login`, halaman web). Buat akses API (`/send`, `/broadcast`, `/history`, `/stats`, `/device/*`) dari project pemanggil, generate **API key** terpisah lewat dashboard tenant itu sendiri > menu **API Key** (atau `POST /api-key/generate`, wajib sesi login, lihat Swagger `/docs/app`) - key ini yang dipakai project lain, BUKAN password login.
 
 ## Pakai dari project lain (mis. pos-backend)
 
 ```js
-const auth = Buffer.from('zonakasir:password-kuat-punya-zonakasir').toString('base64');
-
 await axios.post('http://127.0.0.1:3900/send', {
   nomor: '6281234567890',
   pesan: 'Halo, ini contoh notifikasi.',
 }, {
-  headers: { Authorization: `Basic ${auth}` },
+  headers: { Authorization: `Bearer ${process.env.WAGATEWAY_API_KEY}` }, // wzp_live_...
 });
 ```
+
+Kalau API key ini bocor, cabut lewat dashboard > API Key > "Cabut API Key" - tidak perlu ganti password login akun.
 
 ## Redeploy - apakah perlu pairing ulang?
 

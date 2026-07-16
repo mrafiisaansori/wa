@@ -1,16 +1,18 @@
-// Dokumentasi buat aplikasi pemanggil (Zona Kasir, project lain, dst) dan buat
-// tenant sendiri lewat dashboard - kirim pesan, broadcast, dan kelola device WA
-// milik sendiri. Autentikasi pakai API key Bearer token (generate dari
-// dashboard > menu API Key, klik Authorize di kanan atas buat tempel di sini) -
-// data yang muncul cuma punya tenant pemilik key itu, tenant lain tidak ikut
-// kelihatan. /api-key/* beda jalur - lihat catatan di masing-masing endpoint.
+// Dokumentasi PUBLIK buat aplikasi pemanggil (Zona Kasir, project lain, dst) -
+// SENGAJA cuma 3 endpoint inti (kirim pesan, broadcast, riwayat). Endpoint
+// lain (register, device/pairing/qr, api-key, stats) dipakai dashboard sendiri
+// lewat sesi cookie, bukan buat integrasi API pihak luar - jadi tidak perlu
+// (dan tidak boleh) nongol di sini, walau endpoint-nya sendiri tetap jalan di
+// index.js. Autentikasi pakai API key Bearer token (generate dari dashboard >
+// menu API Key, klik Authorize di kanan atas buat tempel di sini) - data yang
+// muncul cuma punya tenant pemilik key itu, tenant lain tidak ikut kelihatan.
 module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'WA Gateway - Aplikasi',
     version: '1.0.0',
     description:
-      'Kirim pesan WhatsApp, broadcast, dan kelola device (pairing/status/putus). Autentikasi pakai ' +
+      'Kirim pesan WhatsApp, broadcast, dan lihat riwayat pengiriman. Autentikasi pakai ' +
       'API key Bearer token (klik Authorize di kanan atas, tempel key yang di-generate dari dashboard) ' +
       '- data yang muncul cuma punya tenant pemilik key itu, punya tenant lain tidak ikut kelihatan.',
   },
@@ -49,24 +51,6 @@ module.exports = {
         type: 'object',
         properties: { success: { type: 'boolean', example: true }, diterima: { type: 'integer', example: 2 } },
       },
-      DeviceResponse: {
-        type: 'object',
-        properties: {
-          connected: { type: 'boolean', example: true },
-          nomor: { type: 'string', nullable: true, example: '6281234567890' },
-          nama_wa: { type: 'string', nullable: true, example: 'Toko Berkah', description: 'Nama profil WhatsApp (push name) dari HP yang tertaut' },
-          platform: { type: 'string', nullable: true, example: 'android', description: 'Platform client WA dari HP yang tertaut (android/ios/smba/dst), dari data pairing' },
-          nama_perangkat: { type: 'string', example: 'Chrome (Ubuntu)', description: 'Nama yang muncul di HP pada daftar "Perangkat Tertaut"' },
-          terhubung_sejak: { type: 'string', format: 'date-time', nullable: true },
-          antrian: { type: 'integer', example: 0 },
-          percobaan_reconnect: { type: 'integer', example: 0 },
-          riwayat_koneksi: {
-            type: 'array',
-            items: { type: 'object', properties: { event: { type: 'string' }, detail: { type: 'string', nullable: true }, dicatat_at: { type: 'string', format: 'date-time' } } },
-            description: '5 event koneksi terakhir (connected/disconnected/logged_out/pairing_requested/device_unlinked)',
-          },
-        },
-      },
       RiwayatItem: {
         type: 'object',
         properties: {
@@ -86,70 +70,6 @@ module.exports = {
   },
   security: [{ ApiKeyAuth: [] }],
   paths: {
-    '/register': {
-      post: {
-        summary: 'Daftar tenant baru (publik, tidak butuh login)',
-        description: 'Bikin akun tenant sendiri tanpa lewat admin. Dipakai halaman "Daftar tenant baru" di dashboard.',
-        tags: ['Aplikasi'],
-        security: [],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['username', 'password', 'nama'],
-                properties: {
-                  username: { type: 'string', example: 'tokoberkah' },
-                  password: { type: 'string', example: 'password-minimal-6-karakter' },
-                  nama: { type: 'string', example: 'Toko Berkah' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: { description: 'Akun dibuat, sesi langsung aktif' },
-          400: { description: 'Data tidak lengkap, password kurang dari 6 karakter, atau username sudah dipakai', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
-        },
-      },
-    },
-    '/api-key': {
-      get: {
-        summary: 'Lihat status API key (TIDAK menampilkan kode lengkapnya)',
-        description: 'Butuh sesi login dashboard - API key TIDAK bisa dipakai untuk endpoint ini (mencegah key yang bocor dipakai buat inspeksi/regenerasi dirinya sendiri).',
-        tags: ['API Key'],
-        security: [],
-        responses: {
-          200: { description: 'Status, prefix, dan waktu pakai terakhir (kalau ada)' },
-          401: { description: 'Wajib login sesi dashboard' },
-        },
-      },
-    },
-    '/api-key/generate': {
-      post: {
-        summary: 'Generate API key baru (menggantikan yang lama kalau ada)',
-        description: 'Butuh sesi login dashboard, bukan API key. Kode lengkap CUMA ditampilkan sekali di response ini - simpan sekarang, tidak bisa diambil lagi setelahnya. Kalau sebelumnya sudah ada key, key lama langsung tidak berlaku.',
-        tags: ['API Key'],
-        security: [],
-        responses: {
-          200: { description: 'API key baru (field `api_key`) - tampilkan sekali ke user lalu jangan disimpan di client' },
-          401: { description: 'Wajib login sesi dashboard' },
-        },
-      },
-    },
-    '/api-key/revoke': {
-      post: {
-        summary: 'Cabut API key - tenant tidak punya API key sampai generate lagi',
-        description: 'Butuh sesi login dashboard, bukan API key.',
-        tags: ['API Key'],
-        security: [],
-        responses: {
-          200: { description: 'API key dicabut' },
-          401: { description: 'Wajib login sesi dashboard' },
-        },
-      },
-    },
     '/send': {
       post: {
         summary: 'Kirim pesan WhatsApp',
@@ -192,70 +112,6 @@ module.exports = {
         },
       },
     },
-    '/device': {
-      get: {
-        summary: 'Status device WA milik aplikasi yang sedang login',
-        tags: ['Device'],
-        responses: {
-          200: {
-            description: 'Status koneksi, nomor tertaut, panjang antrian, dan log terakhir',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/DeviceResponse' } } },
-          },
-          401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
-        },
-      },
-    },
-    '/device/qr': {
-      get: {
-        summary: 'Ambil QR code terbaru buat menautkan nomor WA (alternatif dari kode pairing)',
-        description: 'Sama seperti WhatsApp Web - scan lewat WhatsApp > Perangkat Tertaut > Tautkan Perangkat. QR berganti otomatis tiap ~20-60 detik selama belum di-scan, jadi panggil ulang endpoint ini secara berkala kalau belum sempat scan.',
-        tags: ['Device'],
-        responses: {
-          200: { description: 'QR code sebagai gambar PNG data-URL (field `qr`)' },
-          400: { description: 'Sudah tertaut, tidak perlu QR lagi' },
-          401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
-          503: { description: 'QR belum tersedia, coba lagi beberapa detik' },
-        },
-      },
-    },
-    '/device/pairing-code': {
-      post: {
-        summary: 'Minta kode pairing baru buat menautkan nomor WA sendiri',
-        description:
-          'Panggil ini TEPAT sebelum siap mengetik di HP - kode dari WhatsApp cuma valid sekitar ' +
-          '60 detik. Cek GET /device kalau sering gagal untuk lihat status koneksi socket.',
-        tags: ['Device'],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['nomor'],
-                properties: { nomor: { type: 'string', example: '628123456789' } },
-              },
-            },
-          },
-        },
-        responses: {
-          200: { description: 'Kode pairing (berlaku singkat)' },
-          400: { description: 'Sudah tertaut, atau nomor belum diisi' },
-          401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
-          503: { description: 'Socket belum siap' },
-        },
-      },
-    },
-    '/device/logout': {
-      post: {
-        summary: 'Putuskan device WA (unlink) dan siapkan sesi baru untuk pairing ulang',
-        description: 'Aksi ini melepas nomor WA dari gateway - device perlu di-pairing ulang lewat POST /device/pairing-code sesudahnya.',
-        tags: ['Device'],
-        responses: {
-          200: { description: 'Device berhasil diputus' },
-          401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
-        },
-      },
-    },
     '/history': {
       get: {
         summary: 'Riwayat pengiriman punya aplikasi yang sedang login',
@@ -267,29 +123,6 @@ module.exports = {
           200: {
             description: 'Daftar riwayat, terbaru duluan',
             content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/RiwayatItem' } } } },
-          },
-          401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
-        },
-      },
-    },
-    '/stats': {
-      get: {
-        summary: 'Ringkasan jumlah pesan per status (dipakai dashboard)',
-        tags: ['Riwayat'],
-        responses: {
-          200: {
-            description: 'Jumlah pesan per status milik aplikasi yang login',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    total: { type: 'integer' }, antri: { type: 'integer' }, terkirim: { type: 'integer' },
-                    delivered: { type: 'integer' }, read: { type: 'integer' }, gagal: { type: 'integer' },
-                  },
-                },
-              },
-            },
           },
           401: { description: 'API key salah/dicabut, atau login aplikasi diperlukan' },
         },
