@@ -168,6 +168,19 @@ module.exports = {
         },
       },
     },
+    '/device/qr': {
+      get: {
+        summary: 'Ambil QR code terbaru buat menautkan nomor WA (alternatif dari kode pairing)',
+        description: 'Sama seperti WhatsApp Web - scan lewat WhatsApp > Perangkat Tertaut > Tautkan Perangkat. QR berganti otomatis tiap ~20-60 detik selama belum di-scan, jadi panggil ulang endpoint ini secara berkala kalau belum sempat scan.',
+        tags: ['Device'],
+        responses: {
+          200: { description: 'QR code sebagai gambar PNG data-URL (field `qr`)' },
+          400: { description: 'Sudah tertaut, tidak perlu QR lagi' },
+          401: { description: 'Login aplikasi diperlukan' },
+          503: { description: 'QR belum tersedia, coba lagi beberapa detik' },
+        },
+      },
+    },
     '/device/pairing-code': {
       post: {
         summary: 'Minta kode pairing baru buat menautkan nomor WA sendiri',

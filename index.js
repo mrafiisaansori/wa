@@ -15,6 +15,7 @@ const {
   DisconnectReason,
   Browsers,
 } = require('@whiskeysockets/baileys');
+const QRCode = require('qrcode');
 const db = require('./db');
 const swaggerAdmin = require('./swagger-admin');
 const swaggerApp = require('./swagger-app');
@@ -48,7 +49,7 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 const tenants = new Map(); // aplikasi_id -> tenant state
 
 function newTenantState() {
-  return { sock: null, authState: null, isReady: false, reconnectAttempts: 0, queue: [], processing: false, terhubungSejak: null };
+  return { sock: null, authState: null, isReady: false, reconnectAttempts: 0, queue: [], processing: false, terhubungSejak: null, qr: null };
 }
 
 // Nama device yang dikirim ke WhatsApp saat pairing - ini yang muncul di HP
@@ -153,10 +154,18 @@ async function startSock(aplikasiId) {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
 
+    // Baileys nerbitin QR baru tiap ~20-60 detik selama belum registered,
+    // di luar/bareng jalur pairing-code - dua-duanya jalan dari socket yang
+    // sama, tenant tinggal pilih mau pakai yang mana dari dashboard.
+    if (update.qr) {
+      tenant.qr = update.qr;
+    }
+
     if (connection === 'open') {
       tenant.isReady = true;
       tenant.reconnectAttempts = 0;
       tenant.terhubungSejak = new Date();
+      tenant.qr = null;
       console.log(`[wagateway] aplikasi #${aplikasiId} terhubung ke WhatsApp.`);
       logKoneksi(aplikasiId, 'connected');
     }
@@ -176,6 +185,7 @@ async function startSock(aplikasiId) {
         logKoneksi(aplikasiId, 'logged_out', `statusCode ${statusCode}`);
         fs.rmSync(authFolder(aplikasiId), { recursive: true, force: true });
         tenant.reconnectAttempts = 0;
+        tenant.qr = null;
         startSock(aplikasiId);
         return;
       }
@@ -511,6 +521,25 @@ app.post('/device/pairing-code', requireAppAuth, async (req, res) => {
   }
 });
 
+// QR alternatif dari kode pairing nomor - Baileys nerbitin dua-duanya dari
+// socket yang sama (lihat handler connection.update di startSock), endpoint
+// ini cuma nyajiin QR terakhir yang ketangkep sebagai gambar PNG data-URL.
+app.get('/device/qr', requireAppAuth, async (req, res) => {
+  const tenant = getTenant(req.aplikasi.id);
+  if (tenant.authState?.creds?.registered) {
+    return res.status(400).json({ error: 'Sudah tertaut ke WhatsApp - tidak perlu pairing lagi' });
+  }
+  if (!tenant.qr) {
+    return res.status(503).json({ error: 'QR belum tersedia, coba lagi beberapa detik' });
+  }
+  try {
+    const dataUrl = await QRCode.toDataURL(tenant.qr, { margin: 1, width: 280 });
+    res.json({ qr: dataUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/device/logout', requireAppAuth, async (req, res) => {
   const aplikasiId = req.aplikasi.id;
   const tenant = getTenant(aplikasiId);
@@ -524,6 +553,7 @@ app.post('/device/logout', requireAppAuth, async (req, res) => {
   fs.rmSync(authFolder(aplikasiId), { recursive: true, force: true });
   tenant.isReady = false;
   tenant.reconnectAttempts = 0;
+  tenant.qr = null;
   logKoneksi(aplikasiId, 'device_unlinked');
   startSock(aplikasiId).catch((err) => console.error(`[wagateway] gagal restart socket aplikasi #${aplikasiId}:`, err.message));
   res.json({ success: true });

@@ -30,6 +30,7 @@ window.WazapiAPI = (function () {
     logout: function () { return postJSON('/logout'); },
     device: function () { return request('/device'); },
     pairingCode: function (nomor) { return postJSON('/device/pairing-code', { nomor: nomor }); },
+    deviceQr: function () { return request('/device/qr'); },
     deviceLogout: function () { return postJSON('/device/logout'); },
     send: function (nomor, pesan) { return postJSON('/send', { nomor: nomor, pesan: pesan }); },
     broadcast: function (pesan, nomorList) { return postJSON('/broadcast', { pesan: pesan, nomor_list: nomorList }); },

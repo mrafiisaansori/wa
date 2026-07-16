@@ -75,7 +75,7 @@
 .section-head p { color: var(--text-dim); font-size: 15.5px; line-height: 1.7; }
 
 /* --- Feature grid --- */
-.feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 .feature-card { padding: 24px; position: relative; transition: transform .18s var(--ease), box-shadow .18s var(--ease); }
 .feature-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
 .feature-icon {

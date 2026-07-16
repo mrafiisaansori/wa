@@ -98,6 +98,7 @@
       el.classList.toggle('active', el.getAttribute('data-section') === name);
     });
     document.getElementById('navbar-title').textContent = sectionTitles[name] || '';
+    if (name !== 'perangkat') stopQrPolling();
     if (name === 'dashboard') { loadDashboardData(); }
     if (name === 'pesan') { loadHistory(); }
     if (name === 'perangkat') { loadDevice(); }
@@ -320,6 +321,8 @@
 
       var panelPairing = document.getElementById('panel-pairing');
       if (panelPairing) panelPairing.classList.toggle('hidden', !!data.nomor);
+      if (data.connected) stopQrPolling();
+      else if (pairingMode === 'qr') startQrPolling();
 
       var log = data.riwayat_koneksi || [];
       var logList = document.getElementById('device-log-list');
@@ -336,7 +339,59 @@
     }).catch(function () { /* diamkan, guard sesi sudah nangani 401 di awal load */ });
   }
 
+  var pairingMode = 'code';
+  var qrPollTimer = null;
+
+  function stopQrPolling() {
+    if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; }
+  }
+
+  function fetchQr() {
+    if (document.hidden) return; // hemat request pas tab tidak aktif dilihat
+    var img = document.getElementById('qr-image');
+    var loading = document.getElementById('qr-loading');
+    var statusText = document.getElementById('qr-status-text');
+    var alertEl = document.getElementById('qr-alert');
+    hideAlert(alertEl);
+    api.deviceQr().then(function (data) {
+      img.src = data.qr;
+      img.classList.remove('hidden');
+      loading.classList.add('hidden');
+      statusText.textContent = 'QR diperbarui otomatis tiap ±20 detik.';
+    }).catch(function (err) {
+      if (err.status === 400) {
+        // Sudah tertaut - loadDevice() bakal nyembunyiin panel ini sebentar lagi.
+        stopQrPolling();
+        return;
+      }
+      statusText.textContent = err.message;
+    });
+  }
+
+  function startQrPolling() {
+    stopQrPolling();
+    document.getElementById('qr-image').classList.add('hidden');
+    document.getElementById('qr-loading').classList.remove('hidden');
+    document.getElementById('qr-status-text').textContent = 'Memuat QR...';
+    fetchQr();
+    qrPollTimer = setInterval(fetchQr, 20000);
+  }
+
   function setupPairing() {
+    var modeToggle = document.getElementById('pairing-mode-toggle');
+    var codeBlock = document.getElementById('pairing-mode-code');
+    var qrBlock = document.getElementById('pairing-mode-qr');
+
+    modeToggle.querySelectorAll('button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        pairingMode = btn.getAttribute('data-pairing-mode');
+        modeToggle.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        codeBlock.classList.toggle('hidden', pairingMode !== 'code');
+        qrBlock.classList.toggle('hidden', pairingMode !== 'qr');
+        if (pairingMode === 'qr') startQrPolling(); else stopQrPolling();
+      });
+    });
+
     document.getElementById('pairing-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var alertEl = document.getElementById('pairing-alert');
