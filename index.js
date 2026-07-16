@@ -32,8 +32,14 @@ let sock;
 let authState; // ref ke state.creds - dipakai /pairing-code buat cek sudah registered atau belum
 let isReady = false;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAY_MS = 5000; // jeda sebelum reconnect - cegah reconnect storm kalau server WA sedang menolak koneksi
+// Exponential backoff, TIDAK PERNAH menyerah total - cuma jarak antar percobaan
+// makin lama kalau terus gagal (cegah reconnect storm), sampai maksimal 5 menit.
+const BASE_RECONNECT_DELAY_MS = 5000;
+const MAX_RECONNECT_DELAY_MS = 5 * 60 * 1000;
+function nextReconnectDelay(attempt) {
+  const delay = BASE_RECONNECT_DELAY_MS * (2 ** Math.min(attempt - 1, 6));
+  return Math.min(delay, MAX_RECONNECT_DELAY_MS);
+}
 
 async function logKoneksi(event, detail) {
   try {
@@ -140,16 +146,12 @@ async function startSock() {
 
       logKoneksi('disconnected', `statusCode ${statusCode}`);
       reconnectAttempts += 1;
-      if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-        console.error(
-          `[wagateway] gagal reconnect ${MAX_RECONNECT_ATTEMPTS}x berturut-turut (statusCode terakhir: ${statusCode}). ` +
-          'Berhenti auto-reconnect - kemungkinan VPS tidak bisa konek ke server WhatsApp (cek jaringan/firewall keluar), ' +
-          'restart manual setelah dicek: pm2 restart wagateway'
-        );
-        return;
+      const delay = nextReconnectDelay(reconnectAttempts);
+      if (reconnectAttempts > 5) {
+        console.warn(`[wagateway] sudah gagal reconnect ${reconnectAttempts}x berturut-turut (statusCode terakhir: ${statusCode}) - tetap dicoba terus, jarak makin lama.`);
       }
-      console.log(`[wagateway] reconnect percobaan ke-${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dalam ${RECONNECT_DELAY_MS / 1000} detik...`);
-      setTimeout(startSock, RECONNECT_DELAY_MS);
+      console.log(`[wagateway] reconnect percobaan ke-${reconnectAttempts} dalam ${Math.round(delay / 1000)} detik...`);
+      setTimeout(startSock, delay);
     }
   });
 
