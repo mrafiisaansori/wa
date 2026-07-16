@@ -223,9 +223,12 @@ app.use(session({
   saveUninitialized: false,
   cookie: { httpOnly: true, sameSite: 'lax', secure: 'auto' },
 }));
-// UI web statis (login + kirim pesan + riwayat) - murni HTML/CSS/JS, tanpa
-// build step. Ditaruh sebelum route API biar / kepegang file public/index.html.
-app.use(express.static(path.join(__dirname, 'public')));
+// UI web statis (landing, login, register, dashboard) - murni HTML/CSS/JS,
+// tanpa build step. `extensions: ['html']` bikin /login, /register,
+// /dashboard otomatis ke-resolve ke login.html/register.html/dashboard.html
+// (routing doang, bukan endpoint/logic baru). Ditaruh sebelum route API biar
+// / kepegang file public/index.html (landing page).
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 // ===== Auth admin (operator wagateway) - kredensial tunggal dari .env, buat
 // provisioning tenant baru. Ini BUKAN akun tenant. =====

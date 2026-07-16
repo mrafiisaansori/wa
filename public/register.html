@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<script>(function(){try{var t=localStorage.getItem('wazapp-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Daftar — Wazapp</title>
+<meta name="description" content="Daftar akun Wazapp gratis dan mulai kirim pesan WhatsApp otomatis untuk bisnis Anda." />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='11' fill='%2316A34A'/%3E%3Cpath d='M10 12h20a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H17l-5 4v-4h-2a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3z' fill='none' stroke='%23eafff1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/theme.css" />
+<link rel="stylesheet" href="/css/auth.css" />
+</head>
+<body>
+
+<div class="auth-shell">
+  <aside class="auth-side">
+    <a href="/" class="brand">
+      <span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 8h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-8l-4 3v-3H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" stroke="#eafff1" stroke-width="2" stroke-linejoin="round"/></svg></span>
+      Wazapp
+    </a>
+    <div class="auth-side-copy">
+      <h2>Mulai kirim pesan WhatsApp otomatis dalam hitungan menit.</h2>
+      <p>Daftar gratis, tautkan nomor WhatsApp Anda sendiri, dan langsung terintegrasi lewat REST API.</p>
+      <div class="auth-mock">
+        <div class="auth-mock-row"><span class="auth-mock-dot"></span><span class="auth-mock-bar" style="width:60%"></span></div>
+        <div class="auth-mock-row"><span class="auth-mock-dot"></span><span class="auth-mock-bar" style="width:80%"></span></div>
+        <div class="auth-mock-row"><span class="auth-mock-dot"></span><span class="auth-mock-bar" style="width:40%"></span></div>
+        <div class="auth-mock-row"><span class="auth-mock-dot"></span><span class="auth-mock-bar" style="width:65%"></span></div>
+      </div>
+    </div>
+    <div class="auth-side-foot">
+      <span>Blast Message</span>
+      <span>Webhook</span>
+      <span>Dashboard Premium</span>
+    </div>
+  </aside>
+
+  <main class="auth-main">
+    <div class="auth-card">
+      <div class="auth-card-top">
+        <a href="/" class="brand"><span class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 8h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-8l-4 3v-3H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" stroke="#eafff1" stroke-width="2" stroke-linejoin="round"/></svg></span>Wazapp</a>
+        <h1>Buat akun Wazapp</h1>
+        <p>Gratis, langsung bisa tautkan nomor WhatsApp setelah daftar.</p>
+      </div>
+
+      <div id="register-alert" class="alert alert-error"></div>
+
+      <form id="register-form" novalidate>
+        <div class="field-float">
+          <input id="register-nama" type="text" placeholder=" " autocomplete="name" required />
+          <label for="register-nama">Nama</label>
+        </div>
+        <div class="field-float">
+          <input id="register-username" type="text" placeholder=" " autocomplete="username" required />
+          <label for="register-username">Username</label>
+        </div>
+        <div class="field-float">
+          <input id="register-password" type="password" placeholder=" " autocomplete="new-password" minlength="6" required />
+          <label for="register-password">Password</label>
+          <button type="button" class="field-icon-btn" data-toggle-password="register-password" aria-label="Tampilkan password">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="field-hint">Minimal 6 karakter.</div>
+        <div class="field-float">
+          <input id="register-confirm" type="password" placeholder=" " autocomplete="new-password" minlength="6" required />
+          <label for="register-confirm">Konfirmasi Password</label>
+          <button type="button" class="field-icon-btn" data-toggle-password="register-confirm" aria-label="Tampilkan password">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+
+        <label class="check-row">
+          <input type="checkbox" id="register-terms" required />
+          <span>Saya menyetujui <a href="#">syarat &amp; ketentuan</a> penggunaan Wazapp, termasuk risiko penggunaan metode WhatsApp unofficial.</span>
+        </label>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="register-submit">Daftar</button>
+      </form>
+
+      <p class="auth-foot-link">Sudah punya akun? <a href="/login">Masuk</a></p>
+    </div>
+  </main>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+</body>
+</html>
