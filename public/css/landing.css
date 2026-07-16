@@ -63,6 +63,9 @@
 @media (max-width: 900px) {
   .hero-grid { grid-template-columns: 1fr; }
   .hero-mock { max-width: 440px; margin: 0 auto; }
+  /* Badge kiri sengaja nempel sedikit keluar kartu di desktop (efek melayang),
+     tapi di HP itu bisa mepet/lewat tepi layar - tarik ke dalam supaya aman. */
+  .hero-float-badge.b2 { left: 6px; }
 }
 
 /* --- Section shell --- */

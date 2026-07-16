@@ -89,6 +89,10 @@
 .warn-banner-body { flex: 1; min-width: 0; }
 .warn-banner-body h3 { font-size: 14.5px; margin-bottom: 4px; color: #92400E; }
 :root[data-theme="dark"] .warn-banner-body h3 { color: #FCD34D; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .warn-banner-icon { color: #FBBF24; }
+  :root:not([data-theme="light"]) .warn-banner-body h3 { color: #FCD34D; }
+}
 .warn-banner-body p { font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 12px; }
 
 /* --- Stat cards --- */
